@@ -36,7 +36,7 @@ PAYLOAD_MODE = os.getenv("QUICKML_PAYLOAD_MODE", "data_list")
 CHUNK = int(os.getenv("QUICKML_CHUNK", "100"))
 WORKERS = int(os.getenv("QUICKML_WORKERS", "4"))
 STRICT = os.getenv("QUICKML_STRICT", "0") == "1"
-TIMEOUT_S = 30
+TIMEOUT_S = int(os.getenv("QUICKML_TIMEOUT", "10"))
 RETRIES = 3
 
 _FALLBACK_INTERCEPT = 143.82
