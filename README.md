@@ -4,9 +4,9 @@ Hourly demand forecast (linear model: hour-of-day blocks + cooling hinge at 24 Â
 
 **Live Catalyst URL:** https://microgrid-api-50047163722.development.catalystappsail.in
 
-The service record exists in Catalyst, but the previously uploaded revision reported an
-AppSail startup/port error. Redeploy the refreshed `backend-appsail.zip` before treating the
-URL as operational.
+The service is deployed and active in Catalyst AppSail (Deployment `102834000000021105`).
+All REST endpoints (`/api/predict`, `/api/forecast`, `/api/health`, `/api/presets`, `/api/history`)
+and the interactive web dashboard are fully operational.
 
 ## What works today (local)
 
