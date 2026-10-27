@@ -3,88 +3,205 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Microgrid Brain — HackSphere 3.0</title>
+  <title>HackSphere 3.0 // Microgrid Operations — Energy Control Room</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
+  <!-- Header / Telemetry Bar -->
   <header class="top">
-    <div>
-      <h1>Microgrid Brain</h1>
-      <p class="sub">Smart energy demand forecast + grid transition controller</p>
+    <div class="brand-wrapper">
+      <div class="pulse-beacon"></div>
+      <div>
+        <h1>
+          <span class="material-symbols-outlined" style="color:var(--cyan-primary); font-size:24px;">hub</span>
+          Microgrid Brain
+          <span style="font-size:0.75rem; font-family:var(--font-mono); color:var(--cyan-primary); border:1px solid var(--line-cyan); padding:2px 8px; border-radius:4px; margin-left:6px;">NODE-09 // ONLINE</span>
+        </h1>
+        <p class="sub">HACKSPHERE 3.0 · SMART DEMAND FORECAST & POWER DISPATCH</p>
+      </div>
     </div>
+    
     <div class="badges" id="header-badges">
-      <span class="pill" id="src-pill">Model: …</span>
-      <span class="pill" id="run-pill">Run —</span>
-      <span class="pill" id="call-pill">QuickML calls —</span>
+      <span class="pill blue" id="src-pill">
+        <span class="material-symbols-outlined" style="font-size:15px;">memory</span>
+        Model: …
+      </span>
+      <span class="pill" id="run-pill">
+        <span class="material-symbols-outlined" style="font-size:15px;">speed</span>
+        Latency: —
+      </span>
+      <span class="pill green" id="call-pill">
+        <span class="material-symbols-outlined" style="font-size:15px;">analytics</span>
+        API Quota: —
+      </span>
     </div>
   </header>
 
   <main>
+    <!-- Top Grid: Controls & KPIs -->
     <section class="grid-2">
+      <!-- Input Control Card -->
       <article class="card">
-        <h2>Input</h2>
-        <label>Preset
+        <h2>
+          <span class="material-symbols-outlined" style="font-size:18px;">tune</span>
+          Operational Controls
+        </h2>
+        
+        <label>
+          Scenario Preset
           <select id="preset"></select>
         </label>
+        
         <div class="row-btns">
-          <button type="button" id="btn-run" class="primary">Run forecast</button>
-          <button type="button" id="btn-live">Live feed</button>
-          <label class="file-btn">Upload CSV
+          <button type="button" id="btn-run" class="primary">
+            <span class="material-symbols-outlined" style="font-size:18px;">bolt</span>
+            Run Forecast
+          </button>
+          <button type="button" id="btn-live">
+            <span class="material-symbols-outlined" style="font-size:18px;">play_circle</span>
+            Live Feed
+          </button>
+          <label class="file-btn">
+            <span class="material-symbols-outlined" style="font-size:18px;">upload_file</span>
+            Upload CSV
             <input type="file" id="csv" accept=".csv" />
           </label>
         </div>
-        <p class="hint">CSV columns: timestamp, ambient_temp_c, humidity_pct, solar_irradiance_wm2</p>
+        
+        <p class="hint">Expected Schema: timestamp, ambient_temp_c, humidity_pct, solar_irradiance_wm2</p>
+        
         <div class="battery-settings">
-          <span>Battery kWh</span><input id="cap" type="number" value="2000" />
-          <span>Start SoC</span><input id="soc0" type="number" step="0.05" value="0.7" />
+          <span class="material-symbols-outlined" style="font-size:16px; color:var(--cyan-primary);">battery_charging_full</span>
+          <span>BESS Cap (kWh):</span>
+          <input id="cap" type="number" value="2000" />
+          <span>Start SoC:</span>
+          <input id="soc0" type="number" step="0.05" value="0.7" />
         </div>
+        
         <div class="quality" id="quality" hidden></div>
       </article>
+
+      <!-- Result Headline / KPI Card -->
       <article class="card headline">
-        <h2>Result headline</h2>
-        <div id="empty-state" class="empty">Load a preset and click <strong>Run forecast</strong>.</div>
+        <h2>
+          <span class="material-symbols-outlined" style="font-size:18px;">insights</span>
+          Dispatch Diagnostics
+        </h2>
+        
+        <div id="empty-state" class="empty">
+          <span class="material-symbols-outlined" style="font-size:36px; display:block; margin:0 auto 8px; color:var(--text-dim);">power</span>
+          Select an operational scenario and trigger <strong>Run Forecast</strong>.
+        </div>
+        
         <div id="headline" hidden>
-          <p>First hour: <span id="first-mode" class="state"></span></p>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <span style="font-family:var(--font-mono); color:var(--text-muted); font-size:0.85rem;">ACTIVE DISPATCH:</span>
+            <span id="first-mode" class="state"></span>
+          </div>
+          
           <div class="kpis">
-            <div><span class="k">Peak</span><strong id="kpi-peak">—</strong></div>
-            <div><span class="k">Overload</span><strong id="kpi-ov">—</strong></div>
-            <div><span class="k">Lowest SoC</span><strong id="kpi-soc">—</strong></div>
-            <div><span class="k">Mode switches</span><strong id="kpi-sw">—</strong></div>
+            <div>
+              <span class="k">Peak Demand</span>
+              <strong id="kpi-peak">—</strong>
+            </div>
+            <div>
+              <span class="k">Critical Overload</span>
+              <strong id="kpi-ov" style="color:var(--crimson-alert);">—</strong>
+            </div>
+            <div>
+              <span class="k">Lowest Battery SoC</span>
+              <strong id="kpi-soc" style="color:var(--amber-tertiary);">—</strong>
+            </div>
+            <div>
+              <span class="k">Mode Switches</span>
+              <strong id="kpi-sw" style="color:var(--emerald-sec);">—</strong>
+            </div>
           </div>
         </div>
       </article>
     </section>
 
+    <!-- Grouped Alert Banner -->
     <div id="banner" class="banner" hidden role="alert" aria-live="polite"></div>
 
+    <!-- Chart: 24-Hour Demand Load Curve -->
     <section class="card">
-      <h2>Predicted load (kW)</h2>
-      <canvas id="chart-load" height="120"></canvas>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h2>
+          <span class="material-symbols-outlined" style="font-size:18px;">show_chart</span>
+          24-Hour Predicted Load Curve (kW)
+        </h2>
+        <div style="display:flex; gap:16px; font-family:var(--font-mono); font-size:0.75rem;">
+          <span style="color:var(--cyan-primary);">-- 160 kW Switching</span>
+          <span style="color:var(--crimson-alert);">-- 200 kW Overload</span>
+        </div>
+      </div>
+      <canvas id="chart-load" height="110"></canvas>
     </section>
 
+    <!-- Mid Grid: Mode Timeline & Battery SoC -->
     <section class="grid-2">
+      <!-- 24-Cell Mode Timeline Strip -->
       <article class="card">
-        <h2>Mode timeline</h2>
+        <h2>
+          <span class="material-symbols-outlined" style="font-size:18px;">view_timeline</span>
+          24-Hour Power Source Timeline
+        </h2>
         <div id="timeline" class="timeline"></div>
+        <div style="display:flex; gap:16px; margin-top:14px; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted);">
+          <span style="display:flex; align-items:center; gap:6px;">
+            <span style="width:12px; height:12px; background:var(--emerald-sec); border-radius:2px;"></span> Main Grid
+          </span>
+          <span style="display:flex; align-items:center; gap:6px;">
+            <span style="width:12px; height:12px; background:var(--cyan-primary); border-radius:2px;"></span> Renewable Storage
+          </span>
+          <span style="display:flex; align-items:center; gap:6px;">
+            <span style="width:12px; height:12px; border:2px solid var(--crimson-alert); border-radius:2px;"></span> Overload (&ge;200 kW)
+          </span>
+        </div>
       </article>
+
+      <!-- Battery SoC & Power Chart -->
       <article class="card">
-        <h2>Battery SoC</h2>
-        <canvas id="chart-soc" height="140"></canvas>
+        <h2>
+          <span class="material-symbols-outlined" style="font-size:18px;">battery_charging_full</span>
+          Battery State-of-Charge (SoC) %
+        </h2>
+        <canvas id="chart-soc" height="135"></canvas>
       </article>
     </section>
 
+    <!-- Hourly Table -->
     <section class="card">
       <div class="table-head">
-        <h2>Hourly table</h2>
-        <button type="button" id="btn-csv">Download CSV</button>
+        <h2>
+          <span class="material-symbols-outlined" style="font-size:18px;">table_chart</span>
+          Hourly Dispatch Log
+        </h2>
+        <button type="button" id="btn-csv">
+          <span class="material-symbols-outlined" style="font-size:16px;">download</span>
+          Export Cleaned CSV
+        </button>
       </div>
       <div class="table-wrap">
         <table id="tbl">
           <thead>
             <tr>
-              <th>Hour</th><th>Temp</th><th>kW</th><th>Mode</th>
-              <th>Overload</th><th>SoC</th><th>Reason</th>
+              <th>Timestamp</th>
+              <th>Ambient Temp (°C)</th>
+              <th>Demand (kW)</th>
+              <th>Active Power Source</th>
+              <th>Critical Overload</th>
+              <th>Battery SoC</th>
+              <th>Dispatch Rule Justification</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -92,20 +209,30 @@
       </div>
     </section>
 
+    <!-- Bottom Diagnostics: Logs & Run History -->
     <section class="grid-2">
       <article class="card">
-        <h2>Logs</h2>
-        <pre id="logs" class="logs">Waiting for a run…</pre>
+        <h2>
+          <span class="material-symbols-outlined" style="font-size:18px;">terminal</span>
+          Diagnostic Terminal Stream
+        </h2>
+        <pre id="logs" class="logs">Initializing telemetry bus...</pre>
       </article>
+      
       <article class="card">
-        <h2>History</h2>
+        <h2>
+          <span class="material-symbols-outlined" style="font-size:18px;">history</span>
+          Simulation Run History
+        </h2>
         <ul id="history" class="history"></ul>
       </article>
     </section>
   </main>
+
   <footer>
-    HackSphere 3.0 · Linear demand model (hour blocks + cooling hinge) · SoC never changes official mode
+    HACKSPHERE 3.0 · PURE PYTHON QUICKML ENGINE · ZOHO CATALYST APPSAIL
   </footer>
+  
   <script src="/app.js"></script>
 </body>
 </html>

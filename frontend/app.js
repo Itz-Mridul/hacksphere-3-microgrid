@@ -32,12 +32,15 @@
 
   function setPills(health, model) {
     var src = (model && model.source) || (health && health.quickml_configured ? "quickml" : "fallback");
-    document.getElementById("src-pill").textContent = "Model: " + (model && model.version ? model.version + " / " : "") + src;
-    document.getElementById("src-pill").className = "pill " + sourceClass(src);
-    if (model) document.getElementById("run-pill").textContent = "Run " + (model.latency_ms || 0) + " ms";
+    var srcPill = document.getElementById("src-pill");
+    srcPill.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;">memory</span> Model: ' + (model && model.version ? model.version + " / " : "") + src;
+    srcPill.className = "pill " + sourceClass(src);
+    if (model) {
+      document.getElementById("run-pill").innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;">speed</span> Latency: ' + (model.latency_ms || 0) + " ms";
+    }
     var used = health ? health.quickml_calls_today : 0;
     var budget = health ? health.daily_budget : 300;
-    document.getElementById("call-pill").textContent = "QuickML calls today " + used + "/" + budget;
+    document.getElementById("call-pill").innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;">analytics</span> API Quota: ' + used + "/" + budget;
   }
 
   function modeLabel(mode) {
@@ -71,7 +74,7 @@
     var shown = top.slice(0, 3);
     var extra = top.length - shown.length;
     var parts = shown.map(function (e) {
-      return "Critical overload " + prettyTs(e.start) + "–" + hourFromTs(e.end) + ":00 (" + e.hours + " h, peak " + e.peak_kw.toFixed(1) + " kW)";
+      return "⚠️ LEVEL 3 CONTINGENCY: Critical Overload Active " + prettyTs(e.start) + "–" + hourFromTs(e.end) + ":00 (" + e.hours + " hrs, Peak " + e.peak_kw.toFixed(1) + " kW ≥ 200 kW Limit)";
     });
     if (extra > 0) parts.push("+" + extra + " more");
     el.textContent = parts.join("  ·  ");
@@ -93,7 +96,7 @@
 
   function chartColors(rows) {
     return rows.map(function (r) {
-      return r.critical_overload ? "#ff5d6c" : (r.mode === "MAIN_GRID" ? "#3dd68c" : "#5aa8ff");
+      return r.critical_overload ? "#ef4444" : (r.mode === "MAIN_GRID" ? "#10b981" : "#00f2fe");
     });
   }
 
@@ -109,27 +112,30 @@
       data: {
         labels: labels,
         datasets: [
-          { label: "p95 high", data: hi, borderColor: "rgba(255,255,255,0.15)", pointRadius: 0, fill: "+1" },
-          { label: "p95 low", data: lo, borderColor: "rgba(255,255,255,0.15)", pointRadius: 0, fill: false },
+          { label: "95% Upper CI", data: hi, borderColor: "rgba(0, 242, 254, 0.2)", backgroundColor: "rgba(0, 242, 254, 0.05)", pointRadius: 0, fill: "+1" },
+          { label: "95% Lower CI", data: lo, borderColor: "rgba(0, 242, 254, 0.2)", pointRadius: 0, fill: false },
           {
-            label: "Demand kW",
+            label: "Predicted Demand (kW)",
             data: y,
-            borderColor: "#9ecbff",
+            borderColor: "#00f2fe",
+            backgroundColor: "rgba(0, 242, 254, 0.15)",
             pointBackgroundColor: chartColors(rows),
-            pointRadius: 4,
-            tension: 0.15
+            pointBorderColor: "#080d1a",
+            pointBorderWidth: 1.5,
+            pointRadius: 5,
+            tension: 0.2,
+            fill: true
           }
         ]
       },
       options: {
         responsive: true,
         plugins: {
-          legend: { labels: { color: "#93a0bb" } },
-          annotation: undefined
+          legend: { labels: { color: "#849495", font: { family: "'Space Grotesk', sans-serif" } } }
         },
         scales: {
-          x: { ticks: { color: "#93a0bb" }, grid: { color: "#243049" } },
-          y: { ticks: { color: "#93a0bb" }, grid: { color: "#243049" } }
+          x: { ticks: { color: "#849495", font: { family: "'JetBrains Mono', monospace" } }, grid: { color: "rgba(255,255,255,0.06)" } },
+          y: { ticks: { color: "#849495", font: { family: "'JetBrains Mono', monospace" } }, grid: { color: "rgba(255,255,255,0.06)" } }
         }
       }
     });
@@ -146,26 +152,34 @@
         datasets: [
           {
             type: "line",
-            label: "SoC %",
+            label: "Battery SoC %",
             data: rows.map(function (r) { return r.soc_pct; }),
-            borderColor: "#f5c542",
+            borderColor: "#f59e0b",
+            backgroundColor: "rgba(245, 158, 11, 0.1)",
+            borderWidth: 2.5,
+            pointBackgroundColor: "#f59e0b",
+            pointRadius: 4,
+            tension: 0.2,
             yAxisID: "y"
           },
           {
-            label: "Battery to load kW",
+            label: "Battery to Load (kW)",
             data: rows.map(function (r) { return r.battery_to_load_kw; }),
-            backgroundColor: "rgba(90,168,255,0.45)",
+            backgroundColor: "rgba(0, 242, 254, 0.35)",
+            borderColor: "#00f2fe",
+            borderWidth: 1,
+            borderRadius: 4,
             yAxisID: "y1"
           }
         ]
       },
       options: {
         responsive: true,
-        plugins: { legend: { labels: { color: "#93a0bb" } } },
+        plugins: { legend: { labels: { color: "#849495", font: { family: "'Space Grotesk', sans-serif" } } } },
         scales: {
-          x: { ticks: { color: "#93a0bb" }, grid: { color: "#243049" } },
-          y: { min: 0, max: 100, ticks: { color: "#93a0bb" }, grid: { color: "#243049" } },
-          y1: { position: "right", ticks: { color: "#93a0bb" }, grid: { display: false } }
+          x: { ticks: { color: "#849495", font: { family: "'JetBrains Mono', monospace" } }, grid: { color: "rgba(255,255,255,0.06)" } },
+          y: { min: 0, max: 100, ticks: { color: "#849495", font: { family: "'JetBrains Mono', monospace" } }, grid: { color: "rgba(255,255,255,0.06)" } },
+          y1: { position: "right", ticks: { color: "#849495", font: { family: "'JetBrains Mono', monospace" } }, grid: { display: false } }
         }
       }
     });
