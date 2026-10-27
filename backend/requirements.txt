@@ -1,0 +1,6 @@
+flask>=2.2,<4
+flask-cors>=4,<6
+numpy>=1.26,<3
+pandas>=2.2,<3
+requests>=2.31,<3
+werkzeug>=2.2,<4

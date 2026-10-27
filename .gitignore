@@ -1,0 +1,16 @@
+.env
+.venv
+venv
+.tools/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+data/
+data/*.db
+*.db
+predictions.csv
+.DS_Store
+.idea/
+.vscode/
+ML.zip

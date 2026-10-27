@@ -1,0 +1,378 @@
+QUICKML MICROGRID PROJECT
+DAILY PROGRESS REPORT
+Date: 26 October 2026
+
+============================================================
+1. PROJECT INSTRUCTIONS FOLLOWED
+============================================================
+
+The project constraints were kept in view throughout the work:
+
+- QuickML must use Linear Regression only.
+- Tree models and XGBoost must not be used because the test data is hotter than the training data and tree models do not extrapolate well.
+- QuickML usage must be protected. Testing should use small 24-row batches rather than repeatedly sending the complete 1,000-row file to a live endpoint.
+- Battery state of charge must not change the grid mode.
+- Grid-mode rules depend only on demand greater than 160 kW and peak hours from 18:00 to 22:00.
+- Battery information is advisory only.
+
+============================================================
+2. SOURCE PROJECT PREPARATION
+============================================================
+
+The uploaded ML.zip archive was extracted and synchronized into the project workspace:
+
+    /home/ubuntu/projects/ml-1bcc5b02
+
+The project source, backend, frontend, data files, tests, tools, and deployment files were reviewed.
+
+Important project files reviewed included:
+
+- README.md
+- PROBLEM_STATEMENT.md
+- HackSphere3_Implementation_Plan.txt
+- PROJECT_STATUS_AND_PENDING_TASKS.txt
+- features.py
+- test_controller.py
+- predict.py
+- backend/main.py
+- backend/core/quickml_client.py
+- backend/app-config.json
+- train_features.csv
+- sample_test_input.csv
+
+============================================================
+3. LOCAL CODE FIXES COMPLETED
+============================================================
+
+The following local fixes were made:
+
+A. Pandas frequency fix
+
+The controller test was updated to use the supported lowercase hourly frequency:
+
+    freq="h"
+
+This replaced the older uppercase hourly alias in test_controller.py.
+
+B. Feature-ingestion row-limit fix
+
+The feature engineering code was updated so the row limit is configurable rather than incorrectly limiting training-sized data. Training can explicitly opt out of the inference limit when using the full training dataset.
+
+C. Local model fitting update
+
+The local fitting utility was updated so the 4,000-row training file can be used without the small inference row limit.
+
+D. Backend synchronization
+
+The shared core modules were copied into the backend using the project synchronization utility:
+
+    python tools/copy_core.py
+
+============================================================
+4. LOCAL VALIDATION COMPLETED
+============================================================
+
+The following validation commands were run during the work:
+
+    python test_controller.py
+    python test_features.py
+    python tools/fit_local_model.py
+    python test_eval.py
+    python -m unittest discover -s backend/tests -v
+    python -m pytest -q
+
+The required Python dependencies were installed as needed, including compatible Flask, Flask-CORS, and pytest packages.
+
+============================================================
+5. GIT REPOSITORY COMPLETED
+============================================================
+
+A Git repository was initialized in the project directory.
+
+The completed project was committed with the message:
+
+    HackSphere 3.0: complete microgrid forecast and controller
+
+A final cleanup commit was also created to ignore the generated delivery archive.
+
+The project was packaged as:
+
+    ML_completed.zip
+
+The package excludes Git metadata, virtual environments, caches, and the original uploaded archive.
+
+============================================================
+6. QUICKML DATASET AND PIPELINE
+============================================================
+
+The authenticated Zoho Catalyst project used was:
+
+    Project-Rainfall
+
+QuickML dataset uploaded:
+
+    train_features
+
+The dataset contains the engineered feature columns and target column needed for demand prediction.
+
+The QuickML pipeline was created as a Prediction pipeline.
+
+Pipeline configuration:
+
+- Pipeline type: Prediction
+- Model type: Regression
+- Algorithm: Linear Regression
+- Dataset: train_features
+- Target column: target_demand_kw
+- Intercept fitting: enabled/default
+
+The pipeline graph was saved and executed successfully.
+
+The Linear Regression model was then used to create a QuickML endpoint named for the microgrid prediction service.
+
+The endpoint was published successfully in the Catalyst QuickML console.
+
+The endpoint URL used for AppSail configuration is:
+
+    https://api.catalyst.zoho.in/quickml/v1/project/102834000000013025/endpoints/predict
+
+The actual endpoint key is confidential and is not included in this report.
+
+============================================================
+7. ZOHO OAUTH SETUP
+============================================================
+
+A Zoho API Console Self Client was used for OAuth credentials.
+
+The required OAuth scope used for the QuickML endpoint was:
+
+    QuickML.deployment.READ
+
+The grant-code description used was:
+
+    Microgrid QuickML prediction endpoint
+
+A fresh grant code was generated and exchanged successfully with Zoho. The response included a refresh token.
+
+The following OAuth values were entered into AppSail as environment variables:
+
+- ZOHO_CLIENT_ID
+- ZOHO_CLIENT_SECRET
+- ZOHO_REFRESH_TOKEN
+- ZOHO_ACCOUNTS_URL
+
+Actual credential values are intentionally not included in this report.
+
+IMPORTANT SECURITY NOTE:
+The client ID, client secret, endpoint key, and OAuth tokens were handled during the session. These values should be treated as confidential. After the project is working, rotate the exposed client secret and create a new refresh token if necessary.
+
+============================================================
+8. APPSAIL BACKEND DEPLOYMENT
+============================================================
+
+The backend deployment archive was created as:
+
+    backend-appsail.zip
+
+The archive contains the backend files at its root.
+
+AppSail deployment settings used:
+
+- Service name: microgrid-api
+- Runtime: Python 3.13
+- Startup command entered: python3 main.py
+- Port: 9000
+- Memory: 512 MB
+- Build file: backend-appsail.zip
+
+The following AppSail environment variables were configured:
+
+    QUICKML_ENDPOINT_KEY
+    QUICKML_ENDPOINT_URL
+    ZOHO_ACCOUNTS_URL
+    ZOHO_CLIENT_ID
+    ZOHO_CLIENT_SECRET
+    ZOHO_REFRESH_TOKEN
+    CATALYST_ORG
+    QUICKML_AUTH_MODE
+    QUICKML_PAYLOAD_MODE
+    QUICKML_CHUNK
+    QUICKML_WORKERS
+    QUICKML_MODEL_VERSION
+    QUICKML_ENV
+
+Configured non-secret values included:
+
+    CATALYST_ORG=60093320445
+    QUICKML_AUTH_MODE=oauth
+    QUICKML_PAYLOAD_MODE=data_list
+    QUICKML_CHUNK=24
+    QUICKML_WORKERS=1
+    QUICKML_MODEL_VERSION=quickml-v1
+    QUICKML_ENV=Development
+    ZOHO_ACCOUNTS_URL=https://accounts.zoho.in
+
+The AppSail service was created successfully and Catalyst marked it as Live.
+
+AppSail service ID:
+
+    102834000000013076
+
+Public AppSail URL:
+
+    https://microgrid-api-50047163722.development.catalystappsail.in
+
+============================================================
+9. CURRENT DEPLOYMENT RESULT
+============================================================
+
+The AppSail service is shown as Live in the Catalyst console.
+
+However, the public URL currently returns:
+
+    {"status":"failure","data":{"message":"Execution failed. Please check the startup command or port.","error_code":"INTERNAL_SERVER_ERROR"}}
+
+The Catalyst overview currently shows:
+
+    Current number of live instances: 0
+
+Therefore, the backend deployment is not yet operational even though the service record is marked Live.
+
+============================================================
+10. CONTINUATION WORK COMPLETED IN THIS SESSION
+============================================================
+
+The extracted project was revalidated locally. The controller, feature pipeline, local linear
+fit, and judge contract all pass; the only local test that could not run was the Flask API test
+because Flask is not installed in this workspace interpreter.
+
+Release fixes applied:
+
+- predict.py now defaults to the public AppSail /api/predict proxy, while still allowing
+  QUICKML_ENDPOINT_URL to override it.
+- backend/requirements.txt now uses Python 3.11/3.13-compatible dependency ranges instead of
+  NumPy/Pandas pins that can fail during a Python 3.13 AppSail build.
+- README.md now records the deployed URL and the proxy-based judge path.
+- Fresh backend-appsail.zip and ML_completed.zip archives were generated after the fixes.
+
+The remaining external action is to redeploy backend-appsail.zip in the Catalyst console using
+the Python 3.11 configuration and then verify /api/health. Catalyst console login is required;
+no credentials were present in the workspace, so that cloud-side redeploy could not be performed
+from this session.
+
+The likely next troubleshooting step is to inspect the AppSail application logs and create a corrected deployment. The first correction to test is changing the startup command from:
+
+    python3 main.py
+
+to:
+
+    python main.py
+
+The backend source itself selects the port from:
+
+    X_ZOHO_CATALYST_LISTEN_PORT
+    PORT
+    8080 as fallback
+
+The source code is in backend/main.py, lines 169-172.
+
+Do not blindly redeploy repeatedly. First inspect the Catalyst logs to identify whether the failure is caused by the startup command, dependency installation, missing files, or port handling.
+
+============================================================
+10. REMAINING WORK
+============================================================
+
+The remaining tasks are:
+
+1. Inspect AppSail application/deployment logs.
+2. Identify why no AppSail instance is starting.
+3. If confirmed by the logs, create one corrected deployment using the proper startup command or port setting.
+4. Verify that the public AppSail URL loads successfully.
+5. Test /api/health.
+6. Test /api/predict with a small 24-row batch only.
+7. Confirm the response contains:
+
+       source=quickml
+
+8. Update predict.py so it points to the deployed /api/predict proxy.
+9. Run the final strict test:
+
+       QUICKML_STRICT=1 python predict.py \
+         --input sample_test_input.csv \
+         --output predictions.csv
+
+10. Verify that the strict test succeeds and the source is QuickML.
+11. Open the dashboard in an Incognito window.
+12. Capture screenshots of:
+
+       - QuickML Linear Regression pipeline
+       - Published endpoint
+       - AppSail service and public URL
+       - Working dashboard
+       - Final strict prediction output showing source=quickml
+
+13. Submit:
+
+       - Live URL
+       - GitHub repository URL
+       - Required screenshots
+
+============================================================
+11. IMPORTANT TESTING LIMITS
+============================================================
+
+Do not repeatedly test the full 1,000-row input against the live QuickML endpoint.
+
+Use 24-row batches while debugging. This protects the 500 QuickML calls/month limit and the project budget.
+
+============================================================
+12. CURRENT PROJECT LOCATIONS
+============================================================
+
+Project directory:
+
+    /home/ubuntu/projects/ml-1bcc5b02
+
+Delivery archive:
+
+    /home/ubuntu/projects/ml-1bcc5b02/ML_completed.zip
+
+AppSail archive:
+
+    /home/ubuntu/projects/ml-1bcc5b02/backend-appsail.zip
+
+This report:
+
+    /home/ubuntu/projects/ml-1bcc5b02/TODAY_PROGRESS_REPORT.txt
+
+============================================================
+END OF REPORT
+
+============================================================
+CONTINUATION UPDATE (2026-10-26)
+============================================================
+
+The Catalyst CLI device login was completed and the project is now linked to
+the Catalyst project. QuickML resources were verified in the console:
+
+    dataset: train_features
+    pipeline: microgrid_linear_regression
+    endpoint: microgrid_demand_endpoint
+
+The AppSail service microgrid-api was linked and deployed successfully using
+Python 3.13, memory 512 MB, and startup command:
+
+    python3 main.py
+
+The remote configuration was corrected so that reserved Catalyst environment
+variable names are not sent during deployment. The backend also now falls
+back to /tmp for its SQLite file when AppSail storage is read-only.
+
+The deployment operation succeeds, but the public URL still returns HTTP 503
+with an internal startup/port error. Local startup and backend tests pass, so
+the remaining cloud-side task is to inspect the AppSail instance execution log
+and apply one targeted correction based on that log. Do not repeatedly deploy
+without first checking the instance log.
+
+============================================================
+============================================================

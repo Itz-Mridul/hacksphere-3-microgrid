@@ -1,0 +1,454 @@
+{
+  "presets": [
+    {
+      "id": "heatwave",
+      "label": "Heat wave (sample test, 24 h)",
+      "rows": [
+        {
+          "timestamp": "2015-06-16 15:00:00",
+          "ambient_temp_c": 35.66,
+          "humidity_pct": 56.38,
+          "solar_irradiance_wm2": 169.0
+        },
+        {
+          "timestamp": "2015-06-16 16:00:00",
+          "ambient_temp_c": 34.55,
+          "humidity_pct": 54.73,
+          "solar_irradiance_wm2": 112.0
+        },
+        {
+          "timestamp": "2015-06-16 17:00:00",
+          "ambient_temp_c": 34.35,
+          "humidity_pct": 49.34,
+          "solar_irradiance_wm2": 52.0
+        },
+        {
+          "timestamp": "2015-06-16 18:00:00",
+          "ambient_temp_c": 35.37,
+          "humidity_pct": 56.92,
+          "solar_irradiance_wm2": 16.0
+        },
+        {
+          "timestamp": "2015-06-16 19:00:00",
+          "ambient_temp_c": 32.13,
+          "humidity_pct": 56.42,
+          "solar_irradiance_wm2": 2.0
+        },
+        {
+          "timestamp": "2015-06-16 20:00:00",
+          "ambient_temp_c": 29.96,
+          "humidity_pct": 59.13,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-06-16 21:00:00",
+          "ambient_temp_c": 29.05,
+          "humidity_pct": 57.81,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-06-16 22:00:00",
+          "ambient_temp_c": 26.46,
+          "humidity_pct": 56.26,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-06-16 23:00:00",
+          "ambient_temp_c": 27.87,
+          "humidity_pct": 57.77,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-06-17 00:00:00",
+          "ambient_temp_c": 24.58,
+          "humidity_pct": 65.01,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-06-17 01:00:00",
+          "ambient_temp_c": 25.47,
+          "humidity_pct": 61.99,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-06-17 02:00:00",
+          "ambient_temp_c": 22.91,
+          "humidity_pct": 60.79,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-06-17 03:00:00",
+          "ambient_temp_c": 23.8,
+          "humidity_pct": 63.52,
+          "solar_irradiance_wm2": 4.0
+        },
+        {
+          "timestamp": "2015-06-17 04:00:00",
+          "ambient_temp_c": 24.53,
+          "humidity_pct": 63.6,
+          "solar_irradiance_wm2": 29.0
+        },
+        {
+          "timestamp": "2015-06-17 05:00:00",
+          "ambient_temp_c": 26.23,
+          "humidity_pct": 59.96,
+          "solar_irradiance_wm2": 84.0
+        },
+        {
+          "timestamp": "2015-06-17 06:00:00",
+          "ambient_temp_c": 25.95,
+          "humidity_pct": 66.33,
+          "solar_irradiance_wm2": 142.0
+        },
+        {
+          "timestamp": "2015-06-17 07:00:00",
+          "ambient_temp_c": 25.68,
+          "humidity_pct": 61.19,
+          "solar_irradiance_wm2": 203.0
+        },
+        {
+          "timestamp": "2015-06-17 08:00:00",
+          "ambient_temp_c": 31.68,
+          "humidity_pct": 62.35,
+          "solar_irradiance_wm2": 258.0
+        },
+        {
+          "timestamp": "2015-06-17 09:00:00",
+          "ambient_temp_c": 31.74,
+          "humidity_pct": 60.43,
+          "solar_irradiance_wm2": 302.0
+        },
+        {
+          "timestamp": "2015-06-17 10:00:00",
+          "ambient_temp_c": 31.19,
+          "humidity_pct": 54.46,
+          "solar_irradiance_wm2": 329.0
+        },
+        {
+          "timestamp": "2015-06-17 11:00:00",
+          "ambient_temp_c": 31.54,
+          "humidity_pct": 59.23,
+          "solar_irradiance_wm2": 330.0
+        },
+        {
+          "timestamp": "2015-06-17 12:00:00",
+          "ambient_temp_c": 34.64,
+          "humidity_pct": 55.02,
+          "solar_irradiance_wm2": 319.0
+        },
+        {
+          "timestamp": "2015-06-17 13:00:00",
+          "ambient_temp_c": 36.63,
+          "humidity_pct": 55.45,
+          "solar_irradiance_wm2": 302.0
+        },
+        {
+          "timestamp": "2015-06-17 14:00:00",
+          "ambient_temp_c": 37.93,
+          "humidity_pct": 45.52,
+          "solar_irradiance_wm2": 272.0
+        }
+      ]
+    },
+    {
+      "id": "winter",
+      "label": "Winter day (train rows 200-223)",
+      "rows": [
+        {
+          "timestamp": "2015-01-09 07:00:00",
+          "ambient_temp_c": 3.88,
+          "humidity_pct": 87.49,
+          "solar_irradiance_wm2": 8.0
+        },
+        {
+          "timestamp": "2015-01-09 08:00:00",
+          "ambient_temp_c": 7.06,
+          "humidity_pct": 83.01,
+          "solar_irradiance_wm2": 33.0
+        },
+        {
+          "timestamp": "2015-01-09 09:00:00",
+          "ambient_temp_c": 6.98,
+          "humidity_pct": 81.05,
+          "solar_irradiance_wm2": 66.0
+        },
+        {
+          "timestamp": "2015-01-09 10:00:00",
+          "ambient_temp_c": 7.81,
+          "humidity_pct": 86.8,
+          "solar_irradiance_wm2": 94.0
+        },
+        {
+          "timestamp": "2015-01-09 11:00:00",
+          "ambient_temp_c": 10.7,
+          "humidity_pct": 81.17,
+          "solar_irradiance_wm2": 105.0
+        },
+        {
+          "timestamp": "2015-01-09 12:00:00",
+          "ambient_temp_c": 9.74,
+          "humidity_pct": 77.54,
+          "solar_irradiance_wm2": 92.0
+        },
+        {
+          "timestamp": "2015-01-09 13:00:00",
+          "ambient_temp_c": 11.68,
+          "humidity_pct": 87.0,
+          "solar_irradiance_wm2": 67.0
+        },
+        {
+          "timestamp": "2015-01-09 14:00:00",
+          "ambient_temp_c": 12.65,
+          "humidity_pct": 72.69,
+          "solar_irradiance_wm2": 37.0
+        },
+        {
+          "timestamp": "2015-01-09 15:00:00",
+          "ambient_temp_c": 9.8,
+          "humidity_pct": 88.17,
+          "solar_irradiance_wm2": 11.0
+        },
+        {
+          "timestamp": "2015-01-09 16:00:00",
+          "ambient_temp_c": 12.41,
+          "humidity_pct": 81.1,
+          "solar_irradiance_wm2": 1.0
+        },
+        {
+          "timestamp": "2015-01-09 17:00:00",
+          "ambient_temp_c": 12.18,
+          "humidity_pct": 84.05,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-09 18:00:00",
+          "ambient_temp_c": 8.82,
+          "humidity_pct": 85.8,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-09 19:00:00",
+          "ambient_temp_c": 10.89,
+          "humidity_pct": 81.45,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-09 20:00:00",
+          "ambient_temp_c": 6.77,
+          "humidity_pct": 86.23,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-09 21:00:00",
+          "ambient_temp_c": 8.54,
+          "humidity_pct": 86.16,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-09 22:00:00",
+          "ambient_temp_c": 7.89,
+          "humidity_pct": 86.73,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-09 23:00:00",
+          "ambient_temp_c": 0.34,
+          "humidity_pct": 92.22,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-10 00:00:00",
+          "ambient_temp_c": 1.98,
+          "humidity_pct": 89.81,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-10 01:00:00",
+          "ambient_temp_c": 3.12,
+          "humidity_pct": 92.9,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-10 02:00:00",
+          "ambient_temp_c": 1.7,
+          "humidity_pct": 100.0,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-10 03:00:00",
+          "ambient_temp_c": 1.49,
+          "humidity_pct": 92.06,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-10 04:00:00",
+          "ambient_temp_c": 2.34,
+          "humidity_pct": 85.31,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-10 05:00:00",
+          "ambient_temp_c": 1.99,
+          "humidity_pct": 87.03,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-01-10 06:00:00",
+          "ambient_temp_c": 4.79,
+          "humidity_pct": 87.16,
+          "solar_irradiance_wm2": 1.0
+        }
+      ]
+    },
+    {
+      "id": "spring",
+      "label": "Mild spring day (train)",
+      "rows": [
+        {
+          "timestamp": "2015-03-16 23:00:00",
+          "ambient_temp_c": 16.54,
+          "humidity_pct": 72.9,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-03-17 00:00:00",
+          "ambient_temp_c": 14.22,
+          "humidity_pct": 77.57,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-03-17 01:00:00",
+          "ambient_temp_c": 13.94,
+          "humidity_pct": 72.61,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-03-17 02:00:00",
+          "ambient_temp_c": 13.31,
+          "humidity_pct": 81.89,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-03-17 03:00:00",
+          "ambient_temp_c": 8.9,
+          "humidity_pct": 78.76,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-03-17 04:00:00",
+          "ambient_temp_c": 11.21,
+          "humidity_pct": 85.56,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-03-17 05:00:00",
+          "ambient_temp_c": 11.78,
+          "humidity_pct": 69.88,
+          "solar_irradiance_wm2": 6.0
+        },
+        {
+          "timestamp": "2015-03-17 06:00:00",
+          "ambient_temp_c": 13.78,
+          "humidity_pct": 69.54,
+          "solar_irradiance_wm2": 56.0
+        },
+        {
+          "timestamp": "2015-03-17 07:00:00",
+          "ambient_temp_c": 15.06,
+          "humidity_pct": 74.21,
+          "solar_irradiance_wm2": 137.0
+        },
+        {
+          "timestamp": "2015-03-17 08:00:00",
+          "ambient_temp_c": 16.22,
+          "humidity_pct": 71.02,
+          "solar_irradiance_wm2": 230.0
+        },
+        {
+          "timestamp": "2015-03-17 09:00:00",
+          "ambient_temp_c": 16.44,
+          "humidity_pct": 75.96,
+          "solar_irradiance_wm2": 312.0
+        },
+        {
+          "timestamp": "2015-03-17 10:00:00",
+          "ambient_temp_c": 20.67,
+          "humidity_pct": 69.71,
+          "solar_irradiance_wm2": 367.0
+        },
+        {
+          "timestamp": "2015-03-17 11:00:00",
+          "ambient_temp_c": 20.25,
+          "humidity_pct": 65.78,
+          "solar_irradiance_wm2": 387.0
+        },
+        {
+          "timestamp": "2015-03-17 12:00:00",
+          "ambient_temp_c": 17.82,
+          "humidity_pct": 72.93,
+          "solar_irradiance_wm2": 369.0
+        },
+        {
+          "timestamp": "2015-03-17 13:00:00",
+          "ambient_temp_c": 23.34,
+          "humidity_pct": 63.19,
+          "solar_irradiance_wm2": 316.0
+        },
+        {
+          "timestamp": "2015-03-17 14:00:00",
+          "ambient_temp_c": 20.77,
+          "humidity_pct": 66.65,
+          "solar_irradiance_wm2": 235.0
+        },
+        {
+          "timestamp": "2015-03-17 15:00:00",
+          "ambient_temp_c": 24.07,
+          "humidity_pct": 63.02,
+          "solar_irradiance_wm2": 141.0
+        },
+        {
+          "timestamp": "2015-03-17 16:00:00",
+          "ambient_temp_c": 22.04,
+          "humidity_pct": 58.12,
+          "solar_irradiance_wm2": 58.0
+        },
+        {
+          "timestamp": "2015-03-17 17:00:00",
+          "ambient_temp_c": 23.4,
+          "humidity_pct": 65.65,
+          "solar_irradiance_wm2": 16.0
+        },
+        {
+          "timestamp": "2015-03-17 18:00:00",
+          "ambient_temp_c": 20.66,
+          "humidity_pct": 67.02,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-03-17 19:00:00",
+          "ambient_temp_c": 17.21,
+          "humidity_pct": 74.02,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-03-17 20:00:00",
+          "ambient_temp_c": 15.67,
+          "humidity_pct": 73.25,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-03-17 21:00:00",
+          "ambient_temp_c": 18.18,
+          "humidity_pct": 68.05,
+          "solar_irradiance_wm2": 0.0
+        },
+        {
+          "timestamp": "2015-03-17 22:00:00",
+          "ambient_temp_c": 16.56,
+          "humidity_pct": 72.27,
+          "solar_irradiance_wm2": 0.0
+        }
+      ]
+    }
+  ]
+}

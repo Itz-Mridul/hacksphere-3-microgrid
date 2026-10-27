@@ -1,0 +1,27 @@
+{
+  "n_train": 4000,
+  "in_sample_rmse": 8.515,
+  "plan_coef_rmse": 8.515,
+  "holdout_last800_rmse": 8.279,
+  "heat_stress_rmse": 8.503,
+  "fitted_coefficients": {
+    "intercept": 143.8201,
+    "b_night": -53.9065,
+    "b_ramp6": -11.0014,
+    "b_morning": 29.9035,
+    "b_evening": 54.2329,
+    "b_h23": -33.864,
+    "cdd": 8.5911
+  },
+  "plan_coefficients": {
+    "intercept": 143.82,
+    "b_night": -53.91,
+    "b_ramp6": -11.0,
+    "b_morning": 29.9,
+    "b_evening": 54.23,
+    "b_h23": -33.86,
+    "cdd": 8.59
+  },
+  "r2": 0.9716,
+  "pass_rmse_le_9": true
+}

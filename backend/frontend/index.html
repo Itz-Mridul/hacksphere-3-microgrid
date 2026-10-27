@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Microgrid Brain — HackSphere 3.0</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>Microgrid Brain</h1>
+      <p class="sub">Smart energy demand forecast + grid transition controller</p>
+    </div>
+    <div class="badges" id="header-badges">
+      <span class="pill" id="src-pill">Model: …</span>
+      <span class="pill" id="run-pill">Run —</span>
+      <span class="pill" id="call-pill">QuickML calls —</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="grid-2">
+      <article class="card">
+        <h2>Input</h2>
+        <label>Preset
+          <select id="preset"></select>
+        </label>
+        <div class="row-btns">
+          <button type="button" id="btn-run" class="primary">Run forecast</button>
+          <button type="button" id="btn-live">Live feed</button>
+          <label class="file-btn">Upload CSV
+            <input type="file" id="csv" accept=".csv" />
+          </label>
+        </div>
+        <p class="hint">CSV columns: timestamp, ambient_temp_c, humidity_pct, solar_irradiance_wm2</p>
+        <div class="battery-settings">
+          <span>Battery kWh</span><input id="cap" type="number" value="2000" />
+          <span>Start SoC</span><input id="soc0" type="number" step="0.05" value="0.7" />
+        </div>
+        <div class="quality" id="quality" hidden></div>
+      </article>
+      <article class="card headline">
+        <h2>Result headline</h2>
+        <div id="empty-state" class="empty">Load a preset and click <strong>Run forecast</strong>.</div>
+        <div id="headline" hidden>
+          <p>First hour: <span id="first-mode" class="state"></span></p>
+          <div class="kpis">
+            <div><span class="k">Peak</span><strong id="kpi-peak">—</strong></div>
+            <div><span class="k">Overload</span><strong id="kpi-ov">—</strong></div>
+            <div><span class="k">Lowest SoC</span><strong id="kpi-soc">—</strong></div>
+            <div><span class="k">Mode switches</span><strong id="kpi-sw">—</strong></div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <div id="banner" class="banner" hidden role="alert" aria-live="polite"></div>
+
+    <section class="card">
+      <h2>Predicted load (kW)</h2>
+      <canvas id="chart-load" height="120"></canvas>
+    </section>
+
+    <section class="grid-2">
+      <article class="card">
+        <h2>Mode timeline</h2>
+        <div id="timeline" class="timeline"></div>
+      </article>
+      <article class="card">
+        <h2>Battery SoC</h2>
+        <canvas id="chart-soc" height="140"></canvas>
+      </article>
+    </section>
+
+    <section class="card">
+      <div class="table-head">
+        <h2>Hourly table</h2>
+        <button type="button" id="btn-csv">Download CSV</button>
+      </div>
+      <div class="table-wrap">
+        <table id="tbl">
+          <thead>
+            <tr>
+              <th>Hour</th><th>Temp</th><th>kW</th><th>Mode</th>
+              <th>Overload</th><th>SoC</th><th>Reason</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid-2">
+      <article class="card">
+        <h2>Logs</h2>
+        <pre id="logs" class="logs">Waiting for a run…</pre>
+      </article>
+      <article class="card">
+        <h2>History</h2>
+        <ul id="history" class="history"></ul>
+      </article>
+    </section>
+  </main>
+  <footer>
+    HackSphere 3.0 · Linear demand model (hour blocks + cooling hinge) · SoC never changes official mode
+  </footer>
+  <script src="/app.js"></script>
+</body>
+</html>

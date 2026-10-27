@@ -1,0 +1,1464 @@
+==========================================================================================
+ HACKSPHERE 3.0 - SMART ENERGY MICROGRID & DEMAND FORECASTING ENGINE
+ FULL IMPLEMENTATION PLAN  (Zoho Catalyst + QuickML)
+==========================================================================================
+ Date      : 24 Oct 2026
+ Based on  : your PROBLEM_STATEMENT.pdf and HackSphere_Starter_Kit.zip (all 5 files opened)
+             + my own analysis and tests on your CSV data
+             + web research (Catalyst docs, GitHub repos, arXiv / MDPI / IEEE papers)
+ Language  : plain, simple English. Short sentences.
+
+ TAGS USED IN THIS FILE
+   [DATA]     I measured this on your train_telemetry.csv / sample_test_input.csv
+   [TESTED]   I ran this code or experiment myself and it worked
+   [DOC]      I read this in official Catalyst / Zoho documentation (links in section 17)
+   [PAPER]    from a paper or GitHub repo (links in section 16)
+   [ASSUME]   my assumption - the task does not say. You may change it.
+   [TO-CHECK] I could NOT confirm this. Test it in your own Catalyst console before you trust it.
+
+ NOTE ON "GOOGLE SCHOLAR": my tools cannot open Google Scholar itself. I used normal web
+ search, which returned arXiv, MDPI, IEEE-linked pages and GitHub. Section 16 lists what I found.
+
+------------------------------------------------------------------------------------------
+ CONTENTS
+------------------------------------------------------------------------------------------
+  1.  TL;DR - the 15 things that matter most
+  2.  What you are scored on, and the order to work in
+  3.  Traps hidden in the starter kit
+  4.  What your data really looks like (numbers)
+  5.  Model plan (local test -> QuickML -> endpoint)
+  6.  Architecture on Catalyst (services, API, data tables, secrets)
+  7.  Transition controller + battery state of charge
+  8.  Dashboard plan
+  9.  Data ingestion and cleanup rules
+  10. predict.py, test_eval.py, README
+  11. Deployment steps and go-live checklist
+  12. Timeline (phases, hours, definition of done)
+  13. Risk list
+  14. Submission checklist
+  15. Stretch ideas, and things NOT worth doing
+  16. Research notes (papers + GitHub)
+  17. Source links
+  18. Questions to ask the organizers
+  Appendix A. Tested reference code (features, controller, battery, predict.py, tests)
+  Appendix B. curl templates for QuickML + token refresh, known-answer table
+
+
+==========================================================================================
+ 1. TL;DR - THE 15 THINGS THAT MATTER MOST
+==========================================================================================
+ 1. Your data follows one very simple rule [DATA][TESTED]:
+
+        demand_kw  =  hour_level  +  8.59 x max(0, temp_C - 24)  +  random noise (std ~8.5 kW)
+
+    hour_level is a BLOCK pattern, not a smooth curve:
+        hours 00-05 : about  90 kW      hour 06    : about 133 kW
+        hours 07-09 : about 174 kW      hours 10-17: about 144 kW
+        hours 18-22 : about 198 kW      hour 23    : about 110 kW
+
+ 2. Humidity, solar, weekday, month, lag and rolling features add NOTHING [DATA].
+    Their correlation with the leftover error is 0.00 (all between -0.012 and +0.003).
+
+ 3. So the best possible RMSE is about 8.5 kW (the noise floor). If your model gives 8.4 to 8.8
+    you are at the ceiling. Do not waste days chasing 7.x. It is not there.
+
+ 4. A plain Linear / Ridge regression on 6 smart features reaches RMSE 8.5 [TESTED].
+    LightGBM / XGBoost / Random Forest on the raw columns get 11 to 15 on normal validation and
+    37 to 41 on a heat stress test [TESTED]. Table in section 4.5.
+
+ 5. Your test period is MUCH hotter than your training period [DATA]: average 29.2 C in the test
+    file vs 18.5 C in train. Trees cannot continue a straight line past what they have seen.
+    A linear model can. This is the main reason linear wins here.
+
+ 6. QuickML already has Linear Regression, Ridge, Lasso, ElasticNet and 10 more regression
+    algorithms [DOC]. You do not need anything fancy inside QuickML.
+
+ 7. The key trick: build the features OUTSIDE QuickML (hour-block flags + cooling hinge) with
+    ONE shared file, features.py. Use the same file in training-data prep, in predict.py and in
+    the backend. Then train and inference can never disagree [TESTED].
+
+ 8. The starter test_eval.py prints SUCCESS even when your QuickML endpoint is dead, because the
+    starter predict.py quietly falls back to a dummy formula [TESTED]. Do not trust SUCCESS alone.
+
+ 9. The PDF says "python predict.py --input ... --output ..." but the starter predict.py has NO
+    command line. You must add it. Appendix A has a tested version.
+
+10. Free tier = only 500 QuickML prediction calls per month [DOC]. If the endpoint takes one row
+    per call, ONE run on the 1000-row sample file uses 1000 calls. Find out if batch calls work
+    and ask the organizers about credits (section 18).
+
+11. The QuickML endpoint uses Zoho OAuth. An access token lasts only 1 hour [DOC]. The judges run
+    YOUR predict.py on THEIR machine. Decide now how they will authenticate (section 6.6, 18).
+
+12. Controller rules must follow the PDF exactly. Never let battery level change the official
+    mode [TESTED design]. Show battery state of charge separately.
+
+13. In the sample test period, 67% of hours are Renewable Storage mode and 58% of hours are
+    Critical Overload [TESTED]. A naive UI shows 14+ red alerts in a row. Group them into events.
+
+14. Do NOT build LSTM / TFT / N-BEATS / foundation models. Reasons in section 15.2.
+
+15. Work in order of score weight: (1) QuickML endpoint + predict.py, (2) live end-to-end app,
+    (3) controller, (4) UI polish.
+
+
+==========================================================================================
+ 2. WHAT YOU ARE SCORED ON, AND THE ORDER TO WORK IN
+==========================================================================================
+ Criteria                     Weight  How judges can check               How you win it
+ ---------------------------  ------  ---------------------------------  ------------------------------
+ Model accuracy (QuickML)      35%    They run predict.py on a hidden    Linear/Ridge + hinge feature ->
+                                      test set. RMSE of your endpoint.   ~8.5. Keep endpoint alive and
+                                                                         make auth work on their side.
+ Deployment & functionality    35%    Open your public URL. See the      Form or CSV -> clean -> QuickML
+                                      whole flow work.                   -> controller -> charts, in one
+                                                                         click. Test in an incognito tab.
+ Transition controller logic   20%    Right mode + right overload        Exact rule from section 6 of
+                                      alert for each forecast hour.      the PDF. Unit tests on edges.
+ UI & user experience          10%    Clean charts, state badges,        One screen. Threshold lines.
+                                      alert banners.                     Grouped alerts. Mobile OK.
+
+ MUST HAVE (do first)         : QuickML endpoint live, predict.py correct, backend + simple UI live,
+                                controller correct, README, public repo.
+ SHOULD HAVE                  : CSV upload with cleaning report, SoC chart, alert events, history.
+ NICE TO HAVE (only if time)  : probability of overload, live weather auto-fill, what-if sliders.
+
+ Rule of thumb: a boring app that works end to end beats a beautiful app with a dead endpoint.
+
+
+==========================================================================================
+ 3. TRAPS HIDDEN IN THE STARTER KIT
+==========================================================================================
+ T1. SILENT FALLBACK HIDES A DEAD ENDPOINT [TESTED]
+     Starter predict.py: if the endpoint URL is not set OR the call fails, it prints one warning
+     and returns a made-up formula. test_eval.py only checks "right length, no NaN" -> SUCCESS.
+     So SUCCESS does NOT prove QuickML works. Fix: your predict.py records which source it used
+     (quickml / mixed / fallback) and prints it. Always read that line before submitting.
+     Also: the dummy formula scores RMSE 46 on your train data. If a judge's run falls back, you
+     lose most of the 35% accuracy marks.
+
+ T2. NO COMMAND LINE IN THE STARTER predict.py
+     PDF section 8 says: python predict.py --input sample_test_input.csv --output predictions.csv
+     and the output must be "timestamp,target_demand_kw", one row per input row, same order.
+     Starter only has predict(input_df) and a tiny __main__ test. Add argparse. Keep the
+     predict(input_df) function name and return type (numpy array) - test_eval.py imports it.
+
+ T3. REQUEST / RESPONSE FORMAT MAY NOT MATCH
+     Starter sends {"data": [rows...]} and expects {"predictions": [...]}.
+     QuickML SDK docs show input as key-value pairs for ONE record and output
+     {"status": "success", "result": [...]} [DOC].
+     Does the REST endpoint accept many rows in one call? [TO-CHECK]. Open your endpoint
+     details page: it shows the Endpoint URL, required headers and a sample request/response
+     [DOC]. Match predict.py to that box. The Appendix A predict.py has 3 payload modes you can
+     switch with one env var, and a parser that accepts several response shapes.
+
+ T4. TIMEOUT = 10 SECONDS IS TOO SHORT
+     A cold start can take longer. Use 30 s timeout, 3 retries with back-off, and send rows in
+     chunks (default 100 per call, 4 parallel workers). [TESTED with a mock server]
+
+ T5. AUTHENTICATION [DOC]
+     Calling a published QuickML endpoint from outside needs 4 headers:
+        X-QUICKML-ENDPOINT-KEY, Authorization: Zoho-oauthtoken <token>, CATALYST-ORG, Environment
+     (Environment = Development or Production). Scope for the token: QuickML.deployment.READ.
+     Access token lasts 1 hour. Refresh token is permanent. A refresh token can mint at most
+     10 access tokens in 10 minutes, so CACHE the token (do not refresh on every call).
+     India data centre token URL: https://accounts.zoho.in/oauth/v2/token [DOC].
+
+ T6. TRAIN vs TEST TEMPERATURE SHIFT [DATA]
+        Temperature band   train rows   sample-test rows
+        below 10 C             828              0
+        10 - 20 C            1343              1
+        20 - 25 C             717            166
+        25 - 28 C             436            248
+        28 - 30 C             234            134
+        30 - 32 C             179            165
+        32 - 34 C             165            159
+        above 34 C             98            127
+     Test period is June-July heat. Only 98 training rows are above 34 C. Trees will be weak
+     there. A straight-line (linear) cooling term is strong there.
+
+ T7. SAMPLE TEST FILE = THE NEXT 1000 HOURS [DATA]
+     train has 4000 rows (2014-12-31 23:00 to 2015-06-16 14:00). sample_test_input.csv has 1000
+     rows (2015-06-16 15:00 to 2015-07-28 06:00). 4000 + 1000 = 5000 = exact 80/20 split, and the
+     test starts 1 hour after train ends, no gaps. The hidden test is probably these same rows
+     (targets hidden) or a similar block. Use ROW-WISE features only (no lag, no rolling), so the
+     script still works if rows are shuffled, repeated or have gaps.
+
+ T8. FREE TIER LIMITS [DOC]
+     QuickML: 500 prediction calls / month, 1 GB storage, 1,800 CPU-seconds training / month.
+     Price after free tier: $0.0005 per single prediction call.
+     AppSail: 900 GB-minutes free per month, then $0.0013 per GB-minute.
+     If any component goes over, a minimum per-project charge starts. Check billing settings.
+     Plan: cache predictions, test with 24 rows, run the full 1000-row test only at the end.
+
+ T9. OLD CATALYST SERVICES ARE DEAD [DOC]
+     Catalyst File Store, Event Listeners and Cron were announced to reach end of life on
+     30 April 2026. Many old tutorials still use them. Use Stratus (files), Signals (events),
+     Job Scheduling (timers) instead.
+
+ T10. QUICKML LIMITS [DOC]
+     25 datasets, 25 pipelines, 10 endpoints per project. Max 25 columns in one stage operation.
+     n_estimators range is 1 to 500 for ensemble models. File upload up to 1 GB.
+     QuickML runs in the US, IN and EU data centres (some pages also list JP, SA, CA).
+
+ T11. APPSAIL RULES [DOC]
+     Listen on the port in env var X_ZOHO_CATALYST_LISTEN_PORT. Config file: app-config.json
+     (keys: command, env_variables, memory, stack). Managed Python runtime is shown as
+     Python 3.9 -> write 3.9-safe code (no match-case, no "X | Y" type hints).
+     Writing files in the app folder is restricted -> use /tmp for temp files.
+
+ T12. BROWSER TIME BUG
+     Do not parse "2015-06-16 18:00:00" with new Date(). Safari can fail and other browsers
+     apply the local time zone. Read the hour straight from the string (characters 11-12).
+     Backend: use pandas to_datetime with NO time-zone conversion.
+
+ T13. STARTER FILES HAVE WINDOWS LINE ENDINGS (CRLF) AND A BLANK LINE AFTER EVERY LINE
+     Harmless, but clean them (dos2unix) before you commit so git diffs are readable.
+
+ T14. SYNTHETIC-DATA QUIRKS [DATA]
+     Solar is above zero at hours 03-05 and 18-19 (not realistic). The first train row is
+     2014-12-31 23:00. These are just quirks of a made-up dataset. Do not try to "fix" them.
+
+
+==========================================================================================
+ 4. WHAT YOUR DATA REALLY LOOKS LIKE (NUMBERS)
+==========================================================================================
+ 4.1 Files and shapes [DATA]
+     train_telemetry.csv     4000 rows x 5 cols   2014-12-31 23:00 -> 2015-06-16 14:00   hourly, no gaps
+     sample_test_input.csv   1000 rows x 4 cols   2015-06-16 15:00 -> 2015-07-28 06:00   hourly, no gaps
+     Missing values: 0 in both files. Duplicate timestamps: 0. Timestamps already sorted.
+
+ 4.2 Basic statistics [DATA]
+                              train mean   std     min      max   |  test mean   std     min     max
+     ambient_temp_c              18.50     8.92   -1.40    38.30  |    29.22     3.89   19.65   38.13
+     humidity_pct                70.81    11.32   39.32   100.00  |    57.92     5.86   42.00   76.89
+     solar_irradiance_wm2        88.78   127.34    0.00   488.00  |   143.82   156.80    0.00  489.00
+     target_demand_kw           156.57    50.50   51.10   306.33  |     (hidden)
+     Train: 22% of rows are >= 200 kW, 46.7% are > 160 kW.
+
+ 4.3 Hour-of-day level (fitted from your data, when temperature is 24 C or lower) [DATA][TESTED]
+     hour:   00    01    02    03    04    05  |  06  |   07    08    09  |   10    11    12    13
+     kW  :  89.1  90.1  90.8  90.0  89.6  89.9 | 132.8| 172.7 173.8 174.7| 144.7 143.8 143.0 143.8
+     hour:   14    15    16    17  |   18    19    20    21    22  |  23
+     kW  :  144.0 143.3 144.4 143.7| 197.6 198.7 198.7 198.0 197.3 | 110.0
+     -> Six blocks: night(0-5)=90, 6=133, morning(7-9)=174, midday(10-17)=144, evening(18-22)=198,
+        23=110. Inside each block the numbers are equal within noise. So 6 blocks are enough.
+     Note: the evening block 18-22 is the SAME window the controller uses for Renewable Storage.
+
+ 4.4 Cooling effect and what is left over [DATA][TESTED]
+     Above 24.0 C, demand rises 8.59 kW for every 1 C. Best hinge point scanned from 18 to 30 C:
+     24.0 C (RMSE 8.515 at 24.0; no better value found with 0.25 C steps).
+     Slope by block: night 8.8, hour 6 9.3, morning 8.9, midday 8.7, evening 8.5, hour 23 8.0
+     -> one common slope is fine. Below 24 C there is no temperature effect at all
+     (Jan-Mar monthly demand is 143.7, 143.5, 143.8 while temperature rises 7 -> 17 C).
+     Leftover error after the 6 hour blocks + hinge:
+        std 8.52 kW; shape normal (skew 0.05, kurtosis 0.19); same size in every hour (7.6-9.4)
+        and every temperature zone (7.6-8.7) -> no hidden structure.
+        correlation of leftover with: humidity -0.002, solar 0.003, temp -0.001,
+        temp lag 1/2/3 h -0.005/-0.005/-0.012, 3h/6h/24h average temp -0.004/-0.005/-0.007,
+        heating degrees -0.004, humidity x cooling -0.002, solar lag 1h -0.002,
+        previous-hour error 0.005, same-hour-yesterday error -0.008, row number -0.006.
+     Day of week: mean demand 155.2 to 157.5 for all 7 days (correlation 0.000) -> ignore weekday.
+     The starter's dummy cooling slope (8.5) is almost right. Its sine-wave hour pattern is wrong.
+     Starter dummy RMSE on your train data: 46.09.
+
+ 4.5 Model comparison on YOUR data (my local tests, RMSE in kW, lower is better) [TESTED]
+     Table A - three different validation styles
+     ------------------------------------------------------------------------------------------
+     Model                                         Last 800   Heat stress          Forward-chain
+                                                   rows       (train<=28C,         (5 folds of
+                                                   hold-out   test>28C)            400 rows)
+     ------------------------------------------------------------------------------------------
+     Starter dummy formula                          45.9       48.5                 46.1
+     Linear: 24 hour flags + hinge(24C)              8.3        8.5                  8.6
+     Hybrid: linear + tiny LightGBM on leftover      8.5        8.5                  8.8
+     Linear: 24 hour flags + RAW temperature        37.6       55.2                 26.1   <- no hinge = bad
+     LightGBM, raw (hour,temp,humid,solar)          14.5       38.7                 13.0
+     LightGBM, no hour column                       41.9       37.3                 42.3   <- hour is vital
+     XGBoost, raw                                   14.3       38.2                 11.6
+     Random Forest, raw                             13.3       37.3                 11.5
+     Random Forest, hour + hinge                    12.9       41.1                 11.2
+     LightGBM, hour + hinge                         14.7       39.8                 12.8
+     LightGBM, extra weather + rolling features     14.0       38.5                 12.6
+     LightGBM linear_tree, hour + hinge             11.7      276.3                 11.1   <- blows up in heat
+     ------------------------------------------------------------------------------------------
+     Table B - blocked cross-validation (8 blocks of 500 rows held out; mean RMSE)
+                                                   all rows   hot rows only (T>28C)
+     Linear: 24 hour flags + hinge                   8.55       8.68
+     Linear: 6 block flags + hinge                   8.52       8.67
+     Ridge (alpha=1): 6 block flags + hinge          8.52       8.67
+     Random Forest                                   9.75      11.42
+     LightGBM                                        9.83      12.23
+     ------------------------------------------------------------------------------------------
+     How to read: Table B is friendly to trees (other hot days stay in training). Table A "heat
+     stress" is the cruel case. Your real test is somewhere in between: trees will probably land
+     at 11-20 while linear stays at about 8.5. Linear wins in every style of test.
+
+ 4.6 What the sample test period will look like (using the linear model) [TESTED]
+     Predicted demand: mean 189 kW, min 89 kW, max 299 kW.
+     Renewable Storage mode: 67.1% of hours.   Main Grid mode: 32.9% of hours.
+     Critical Overload (>= 200 kW): 57.8% of hours, spread over hours 07 to 22 every day.
+     Only 4 predictions are within +/-3 kW of the 160 threshold; 35 are within +/-3 kW of 200.
+     First 24 hours (2015-06-16 15:00 -> 2015-06-17 14:00): Renewable until 22:00, Main Grid 23:00
+     to 06:00, Renewable again from 07:00. That is 2 mode switches and 15+ overload hours.
+     -> Lesson: the dashboard must GROUP alerts into events, and you need a calm "winter day"
+        preset to show Main Grid mode and a quiet state (section 8).
+
+ 4.7 Uncertainty (cheap bonus feature) [DATA][ASSUME]
+     Leftover error std is 8.5 kW. So a 95% band is about +/-16.7 kW around each prediction, and
+     the chance that real demand is >= 200 kW is 1 - Phi((200 - prediction) / 8.5).
+     This costs no extra QuickML call. It assumes the hidden test behaves like train.
+
+
+==========================================================================================
+ 5. MODEL PLAN (LOCAL TEST -> QUICKML -> ENDPOINT)
+==========================================================================================
+ 5.1 Strategy in one paragraph
+     Do the feature work yourself (6 numbers per row), train a LINEAR model in QuickML, publish
+     it, and call it from predict.py and from the backend with the SAME features. Because the
+     data is simple, a small linear model is both the most accurate and the safest in a hotter
+     test period. Extra complexity gives you more risk and no gain.
+
+ 5.2 The exact features (7 columns in the training file, 25-column limit is no problem) [TESTED]
+     b_night    = 1 if hour is 0..5 else 0
+     b_ramp6    = 1 if hour is 6 else 0
+     b_morning  = 1 if hour is 7..9 else 0
+     b_evening  = 1 if hour is 18..22 else 0
+     b_h23      = 1 if hour is 23 else 0
+     cdd        = max(0, ambient_temp_c - 24.0)        (cooling degrees)
+     (midday hours 10..17 = base level, all flags 0)   target = target_demand_kw
+     Fitted on all 4000 rows (my numbers; QuickML should be very close):
+        intercept 143.82 | b_night -53.91 | b_ramp6 -11.00 | b_morning +29.90
+        b_evening +54.23 | b_h23 -33.86 | cdd +8.59           In-sample RMSE 8.515
+     Humidity, solar and timestamp are NOT sent to the model. The UI and the SoC simulation still
+     use them (solar -> PV power estimate).
+
+ 5.3 Step 0 - local check before touching QuickML (30 min)
+     a) Put features.py (Appendix A) next to the CSV files.
+     b) python make_train_features.py  -> creates train_features.csv (7 columns).
+     c) Fit sklearn LinearRegression; confirm RMSE about 8.5 and the coefficients above.
+        If you do NOT get about 8.5, stop and fix this first. QuickML will only repeat it.
+     d) Keep this local model. It is your yardstick and your emergency fallback.
+
+ 5.4 Step 1 - QuickML console (names in the UI may differ a little) [DOC for the concepts]
+     1. Create / open your Catalyst project in YOUR data centre (India = .in links).
+     2. QuickML -> Datasets -> add data -> Local file upload -> train_features.csv (170 KB; limit 1 GB).
+        Check the profile: 4000 rows, 0 nulls, all 7 columns numeric (flags must be numbers).
+     3. QuickML -> Pipelines -> Create Pipeline -> type "Prediction" -> pick the dataset ->
+        target column = target_demand_kw.
+     4. Drag a regression node: Linear Regression (fit_intercept = True). Connect source ->
+        algorithm -> destination. Save.
+     5. Execute. Read the metrics: expect RMSE about 8.5 and R2 about 0.97.
+     6. Publish: create an endpoint for this model version. Copy the Endpoint URL and the
+        endpoint key. Note your CATALYST-ORG id and which Environment (Development/Production).
+     7. Use the built-in "Test the Model" box [DOC] with the known-answer rows (Appendix B).
+     8. Look at the model explanation (SHAP) chart on the endpoint page [DOC]. cdd and the evening
+        flag should dominate. Screenshot it for the README and demo.
+     9. Create the OAuth client (Zoho API Console of YOUR data centre, "Self Client"), scope
+        QuickML.deployment.READ, exchange the code for a refresh token [DOC]. Store the client id,
+        client secret and refresh token ONLY in env vars / AppSail secrets.
+    10. Run the curl test in Appendix B. Confirm status 200 and the right numbers.
+
+ 5.5 Algorithm ladder (all of these exist in QuickML [DOC])
+     A. Linear Regression         <- primary
+     B. Ridge (alpha 0.1 to 1)     <- same accuracy, safer if you add more columns later
+     C. ElasticNet (alpha 0.001..0.01) <- only if you add many extra features
+     D. XGB with booster = gblinear   <- another linear option
+     NOT as primary: LGBM, XGB gbtree, Random Forest, CatBoost, GB, AdaBoost, Decision Tree, KNN,
+     SVM with rbf kernel. They cannot extend a straight line into hotter weather [TESTED].
+     AutoML [DOC]: you may run it once as a cross-check. Judge it on the HOT part of the data,
+     not on a random split. A random split can flatter tree models.
+     Training budget: 1,800 CPU-seconds per month free [DOC]. Linear models use almost nothing.
+     Do not run dozens of heavy tree trainings "to try".
+
+ 5.6 Validation protocol (put the numbers in your README)
+     - Forward-chaining: train on the first k rows, test on the next 400 (k = 2000..3600).
+     - Heat stress: train on temp <= 28 C, test on temp > 28 C.
+     - Never judge only on a random split. This is time-ordered data.
+     - Final model: fit on all 4000 rows.
+
+ 5.7 Acceptance numbers and the debug list
+     PASS  : QuickML RMSE <= 9.0 on the same data, and the endpoint matches the known-answer
+             table (Appendix B) within +/-1.5 kW.
+     If QuickML RMSE is above 12, check in this order:
+        1) flags uploaded as text / category instead of numbers
+        2) raw "hour" (0..23) used as one number instead of flags (a straight line cannot fit blocks)
+        3) cdd computed from wrong threshold or wrong unit
+        4) timestamp column still in the pipeline
+        5) wrong target column
+        6) endpoint is serving an OLD model version (versions change when stage settings change [DOC])
+
+ 5.8 Other designs (only if Plan A fails or the organizers demand raw columns)
+     - QuickML "Feature Engineering - Operations" can build features from maths on numeric columns
+       [DOC]. It probably cannot do "if hour is 18..22" or max(0, x). [TO-CHECK]
+     - QuickML "Custom Code" nodes (custom data transformation / ML transformation / algorithm,
+       Python classes from templates) exist, but are marked "early access" [DOC]. You could put
+       features.py logic inside so the endpoint takes raw timestamp + weather. More risk. Use only
+       if forced.
+     - Plan A (features made outside) is the simplest and it is fully under your control, because
+       the judges run YOUR predict.py.
+
+ 5.9 Endpoint testing and call budget
+     Every prediction call counts against the 500 free calls [DOC]. Suggested budget:
+        10 calls  - curl tests (1 row, 24 rows, error cases)
+        30 calls  - backend integration tests with 24-row windows
+        rest      - keep for the final 1000-row run and the judges
+     If one call takes many rows, great. If not, 1000 rows = 1000 calls = about $0.50 beyond the
+     free tier [DOC price]. Ask organizers whether they give credits (section 18).
+     Add a cache (section 6.7) so the same row never costs a second call.
+
+ 5.10 Freeze and record
+     - Record: dataset version, pipeline run id, model version, endpoint key name, date.
+     - A new model version is created whenever stage settings change [DOC]. After your final
+       validation, do NOT edit the pipeline again unless you re-test everything.
+     - Compare QuickML's coefficients (if the model page shows them) with the table in 5.2 and
+       copy them into the fallback table inside predict.py, so fallback = same model.
+
+
+==========================================================================================
+ 6. ARCHITECTURE ON CATALYST
+==========================================================================================
+ 6.1 Services and jobs (follows the PDF table, with my choices)
+     Slate        : the web dashboard (React + Vite, or plain HTML/JS). Git deploy supported [DOC].
+     AppSail      : Python backend (Flask or FastAPI). Cleaning, features, QuickML client,
+                    controller, battery simulation, public API.
+     QuickML      : trained linear model + published endpoint.
+     Stratus      : raw uploaded CSV files. Python: stratus = app.stratus();
+                    bucket = stratus.bucket("name"); bucket.put_object("key", file_or_text) [DOC].
+                    Object names cannot contain space, " < > # \ | [DOC] -> use uuid names.
+     Data Store   : tables for telemetry, runs, alerts, logs, cache (relational, easy to query).
+     (or NoSQL)     The PDF allows either. Exact SDK calls: [TO-CHECK] in the docs.
+     Job Scheduling : optional hourly "auto forecast" or keep-warm ping. (Cron is dead [DOC].)
+     Signals      : optional, push alert events. Skip unless you have time.
+
+ 6.2 Picture
+     Browser (Slate dashboard)
+        |  HTTPS + JSON
+        v
+     AppSail  (Python)  -- features.py / controller.py / battery.py  (same code as predict.py)
+        |-- POST /api/forecast  : clean -> features -> cache? -> QuickML -> controller -> SoC
+        |-- POST /api/predict   : evaluator-friendly proxy {"data":[..]} -> {"predictions":[..]}
+        |-- POST /api/upload    : validate CSV, save raw file to Stratus, return rows + quality report
+        |-- GET  /api/history   : last runs from Data Store
+        |-- GET  /api/presets   : ready 24-hour scenarios (heatwave, winter, spring)
+        '-- GET  /api/health    : ok + QuickML reachable + calls used today
+        |
+        +--> QuickML endpoint (OAuth token cached 55 min)         [model]
+        +--> Stratus bucket (raw CSV)                               [files]
+        +--> Data Store / NoSQL (runs, rows, alerts, logs, cache)   [state]
+
+ 6.3 API contract (keep it small and stable)
+     POST /api/forecast
+       request  : {"rows":[{"timestamp":"2015-06-16 15:00:00","ambient_temp_c":35.66,
+                    "humidity_pct":56.38,"solar_irradiance_wm2":169}, ... 1..1000 rows],
+                   "battery":{"capacity_kwh":2000,"soc_start":0.7}}        (battery optional)
+       response : {"run_id":"r_20261024_103011_ab12",
+                   "model":{"source":"quickml|cache|mixed|fallback","version":"v3","latency_ms":640},
+                   "quality":{"rows":24,"filled":{},"clipped":{},"bad_timestamp":0,"warnings":[]},
+                   "rows":[{"timestamp":"...","demand_kw":243.98,"p95_low":227.3,"p95_high":260.7,
+                            "overload_prob":0.99,"mode":"RENEWABLE_STORAGE","critical_overload":true,
+                            "reason":"demand>160 + peak-window 18-22","soc_pct":58.5,"pv_kw":25.4,
+                            "battery_to_load_kw":218.6,"shortfall_kw":0.0,"low_soc_warning":false}],
+                   "transitions":[{"at":"2015-06-16 23:00:00","from":"RENEWABLE_STORAGE","to":"MAIN_GRID"}],
+                   "events":[{"start":"...","end":"...","hours":8,"peak_kw":295.7}],
+                   "kpis":{"peak_kw":295.7,"peak_at":"...","renewable_hours":16,"overload_hours":15,
+                           "min_soc_pct":10.0}}
+     POST /api/predict   request {"data":[{b_night:..,...,cdd:..} or raw rows]}  response
+                         {"predictions":[...],"source":"quickml"}   (same contract as the starter)
+     Errors: 400 + list of problems (bad file, missing columns, too many rows);
+             502 if QuickML is down AND fallback is disabled; always JSON, never an HTML page.
+
+ 6.4 Data tables (Data Store or NoSQL)
+     telemetry_raw : id, ts, temp, humidity, solar, input_source(form|csv|preset), run_id, created_at
+     forecast_run  : run_id, created_at, n_rows, model_source, model_version, latency_ms,
+                     quickml_calls, peak_kw, overload_hours, renewable_hours
+     forecast_row  : run_id, ts, demand_kw, mode, critical_overload, soc_pct, reason
+     alert_event   : run_id, start_ts, end_ts, hours, peak_kw
+     system_log    : ts, level, component, message
+     pred_cache    : key, demand_kw, model_version, created_at
+     usage_counter : day, quickml_calls
+
+ 6.5 Environment variables (set in app-config.json "env_variables" or the console [DOC]; never in Git)
+     QUICKML_ENDPOINT_URL, QUICKML_ENDPOINT_KEY, CATALYST_ORG, QUICKML_ENV (Development|Production)
+     ZOHO_ACCOUNTS_URL (default https://accounts.zoho.in), ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET,
+     ZOHO_REFRESH_TOKEN, CORS_ALLOW_ORIGIN, MAX_ROWS (1000), DAILY_QUICKML_BUDGET (e.g. 300),
+     LOG_LEVEL.   Ship a .env.example with fake values. Add .env to .gitignore on day 1.
+
+ 6.6 THE JUDGE-SIDE LOGIN PROBLEM (important - decide early)
+     The PDF says judges run predict.py against your published QuickML API. They do not have
+     your Zoho secrets. Options:
+       Option 1 - Ask first (section 18). Maybe the judging harness sets env vars or accepts
+                  credentials in a private form. If yes, use predict.py in oauth mode.
+       Option 2 - AppSail proxy (my recommendation if organizers allow it).
+                  /api/predict holds the OAuth token on the SERVER and speaks the starter's
+                  contract: {"data":[...]} in, {"predictions":[...]} out. Put this public URL in
+                  predict.py as the default QUICKML_ENDPOINT_URL. Judges need zero setup, and no
+                  secret is in the repo. The numbers still come from QuickML (response says
+                  "source":"quickml").
+       Option 3 - Hard-code a refresh token in predict.py in a public repo. NOT recommended:
+                  anyone can burn your quota. If you are forced, use a separate OAuth client with
+                  only the QuickML.deployment.READ scope, and revoke it after judging.
+     Proxy safety: max 1000 rows per request, daily call budget, cache, never accept a URL from
+     the caller, log every call, rate-limit per IP.
+     HONESTY RULE: always return and display the "source" (QuickML / cache / local fallback). Write
+     it plainly in the README: "predict.py calls our AppSail proxy, which calls the QuickML
+     endpoint. A flagged local backup model exists." Judges trust that; nobody can say accuracy
+     was faked.
+
+ 6.7 Cache (saves your 500 free calls)
+     key = hash of the 6 feature numbers (cdd rounded to 3 decimals) + model version. Same row ->
+     no QuickML call. If you run the 1000-row sample once through the proxy, a judge run on the
+     same rows costs 0 calls and still returns real QuickML outputs [ASSUME hidden test = same
+     rows]. Keep an in-memory dict plus a Data Store copy; fetch keys in one query per request
+     [TO-CHECK]. Show "cache hit rate" in the logs panel.
+
+ 6.8 Where the UI lives
+     Option 1 (PDF table): Slate frontend + AppSail backend. Needs CORS allow-list for your Slate URL.
+     Option 2 (fewer moving parts): AppSail also serves the built frontend files -> one URL, no CORS.
+     Start with Option 1. Fall back to Option 2 if CORS or login walls waste more than 1 hour.
+     In both cases open the final URL in an incognito window on your phone data (not wifi). It must
+     load with NO Catalyst login. [TO-CHECK that no project setting blocks public access]
+
+ 6.9 Repo layout
+     hacksphere3/
+       README.md   predict.py   test_eval.py   features.py   .env.example   .gitignore
+       sample_test_input.csv   (train_telemetry.csv optional)
+       tools/make_train_features.py
+       backend/   app-config.json  main.py  requirements.txt
+                  core/ features.py controller.py battery.py quickml_client.py cache.py ingest.py store.py
+                  tests/ test_controller.py test_features.py test_api.py
+       frontend/  package.json  vite.config.js  src/ (App, charts, api.js, presets.json)
+       docs/      architecture.png, screenshots/, model_report.md
+     features.py exists once at the root and is COPIED into backend/core by a one-line script
+     (do not edit two copies). Python 3.9-safe code only (AppSail managed runtime [DOC]).
+
+
+==========================================================================================
+ 7. TRANSITION CONTROLLER + BATTERY STATE OF CHARGE
+==========================================================================================
+ 7.1 The rules, exactly as the PDF section 6 says
+        Renewable Storage Mode : demand > 160 kW   OR   hour is 18, 19, 20, 21 or 22
+        Main Grid Mode         : demand <= 160 kW  AND  hour outside 18..22
+        Critical Overload      : demand >= 200 kW   (independent of the mode)
+     Decision table I tested (11 cases, all PASS) [TESTED]:
+        demand    hour   mode                 overload
+        160.00     10    MAIN_GRID            no       (> is strict)
+        160.01     10    RENEWABLE_STORAGE    no
+        100        17    MAIN_GRID            no
+        100        18    RENEWABLE_STORAGE    no       (window start included)
+        100        22    RENEWABLE_STORAGE    no       (window end included)
+        100        23    MAIN_GRID            no
+        150        12    MAIN_GRID            no
+        199.99      3    RENEWABLE_STORAGE    no
+        200.00      3    RENEWABLE_STORAGE    YES      (>= is inclusive)
+        250         3    RENEWABLE_STORAGE    YES      (overload does not need the window)
+        205        19    RENEWABLE_STORAGE    YES
+     Notes (write them in the README):
+       - Decide on the raw (unrounded) prediction. Show 2 decimals. Only a value within 0.005 kW of
+         a threshold could ever differ.
+       - Hour = the hour field of the timestamp. Data is hourly, so 22:00 counts and 23:00 does not.
+         (A 22:30 stamp would count as hour 22. It never occurs in hourly data.)
+       - Each hour is decided on its own. Do NOT add smoothing or hysteresis to the official mode.
+         If you want anti-flapping, show it as a separate advisory number, not as the mode.
+     "Transition signals": the PDF talks about signals when the power source changes. So also
+     emit an event whenever the mode of hour t differs from hour t-1:
+        "TRANSITION RENEWABLE_STORAGE -> MAIN_GRID at 2015-06-16 23:00:00"
+     plus one "INITIAL STATE" signal for the first hour. Show them in the logs panel and the API.
+
+ 7.2 Battery state of charge (SoC) - the PDF gives NO formula, so these are [ASSUME] and editable
+     defaults: capacity 2000 kWh, start SoC 70%, SoC limits 10%..95%, max discharge 300 kW,
+     max charge 150 kW, charge and discharge efficiency 95% each, PV = 150 kWp x irradiance/1000.
+     Each hour:
+        pv        = pv_kwp x irradiance / 1000
+        net_load  = max(0, demand - pv)         pv_surplus = max(0, pv - demand)
+        RENEWABLE mode: battery_to_load = min(net_load, max discharge, usable energy x eff)
+                        energy -= battery_to_load / eff ;  shortfall = net_load - battery_to_load
+                        (spare PV, if any, may still charge the battery; the GRID never does)
+        MAIN GRID mode: charge from pv_surplus first, then from grid, up to max charge and free
+                        room;  energy += charge x eff
+     GOLDEN RULE: SoC never changes the official mode. It only reports: soc_pct, shortfall_kw
+     ("grid assist needed") and low_soc_warning (advisory badge). Otherwise you break the PDF rule
+     and lose controller marks.
+     What my test showed [TESTED]:
+        Heat wave, first 72 test hours: the battery hits its 10% floor every afternoon or evening.
+        At night it recharges only to about 67% by 06:00 (charge is limited to 150 kW for about
+        8 hours), then drains again from 07:00. Evening shortfall (grid assist needed) is about
+        200 to 290 kW. This is real behaviour of the PDF rules (67% of hours are Renewable).
+        Winter day (train rows 200-223): 16 hours Main Grid, 8 hours Renewable, no overload,
+        SoC moves between 43% and 95%.
+     So ship two presets (heat wave and winter day) and a small settings panel for the battery.
+
+ 7.3 Alert events
+     Group consecutive overload hours into ONE event: start, end, hours, peak kW. Banner text:
+     "Critical overload 15:00-22:00 (8 h, peak 296 kW)". Show the biggest 3 events, then a
+     "+N more" link. Use text + icon, not colour only.
+
+ 7.4 Tests to write (Appendix A has test_controller.py - I ran it)
+     - the 11 boundary rows above
+     - random test: for 10,000 random (demand, hour) the result equals the plain formula
+     - events: grouping, one-hour event, event at the end of the window
+     - battery: SoC always between limits, energy balance holds, never discharges in Main Grid
+       mode, the grid never charges the battery in Renewable mode
+     - API test: a 24-row request returns 24 rows, modes agree with controller, "source" present
+
+
+==========================================================================================
+ 8. DASHBOARD PLAN
+==========================================================================================
+ 8.1 Idea: one screen, read top to bottom: INPUT -> RESULT -> ALERTS -> DETAILS.
+
+ 8.2 Layout (desktop)
+     +---------------------------------------------------------------------------------------+
+     | Microgrid Brain  [Model: QuickML v3] [Run 0.8 s] [QuickML calls today 12/300]          |
+     +---------------------------------------------------------------------------------------+
+     | INPUT                          | RESULT HEADLINE                                       |
+     |  Preset [Heat wave v]          |  First hour: RENEWABLE STORAGE  (badge)               |
+     |  [Upload CSV] [Edit 24 rows]   |  Overload: 15 h in 2 events  | Peak 296 kW at 18:00   |
+     |  [Run forecast] [Live feed]    |  Lowest battery 10% at 21:00 | Mode switches: 2       |
+     +--------------------------------+-------------------------------------------------------+
+     | ALERT BANNER (red, grouped): Critical overload 15:00-22:00 (8 h, peak 296 kW)  [+1 more]|
+     +---------------------------------------------------------------------------------------+
+     | CHART 1  predicted load (kW): dashed lines at 160 and 200, 18-22 shaded, 95% band,      |
+     |          dots coloured by mode                                                          |
+     | CHART 2  mode timeline (24 cells)         | CHART 3  battery SoC % + battery power bars |
+     +---------------------------------------------------------------------------------------+
+     | TABLE hour | temp | kW | mode | overload | SoC | reason                [Download CSV]    |
+     | LOGS  ingestion report, QuickML latency, cache hits, transition signals, errors         |
+     +---------------------------------------------------------------------------------------+
+
+ 8.3 Parts and details
+     - Status badges in the header: model source (QuickML = green, cache = blue, fallback = amber).
+     - Input: (a) preset list: "Heat wave (sample test, 24 h)", "Winter day (train)", "Mild spring day",
+       "Custom"; (b) CSV drag-and-drop; (c) quick form: start time, min/max temperature, humidity,
+       peak solar -> builds 24 rows with a simple daily shape; (d) editable 24-row table.
+     - "Live feed" button: moves the 24-hour window forward 1 hour every 3 seconds using cached
+       results, so the chart moves like a real-time system without using up QuickML calls.
+     - KPI cards: peak kW and when, hours in Renewable mode, overload hours/events, minimum SoC.
+     - Badges: MAIN GRID (green), RENEWABLE STORAGE (blue), CRITICAL OVERLOAD (red). Add icon + text.
+     - SoC bar 0-100% with 10% and 95% marks. Show "grid assist" when shortfall > 0.
+     - Table is scrollable on phones; CSV export protects against CSV injection (cell starting with
+       = + - @ gets a leading apostrophe).
+     - History drawer: last 20 runs from the database (shows persistence works - judges like it).
+     - Logs panel lines, e.g.:
+         10:02:11 INGEST rows=24 filled=0 clipped=0
+         10:02:12 QUICKML calls=1 latency=640ms source=quickml
+         10:02:12 TRANSITION MAIN_GRID -> RENEWABLE_STORAGE at 2015-06-16 18:00:00
+ 8.4 UX details: loading skeleton, plain error text ("QuickML did not answer. A flagged backup
+     model was used."), empty state with one clear button, keyboard focus styles, aria-live on the
+     banner, contrast checked, breakpoints (stack columns under 700 px, chart height about 260 px).
+ 8.5 Tech: React + Vite (template from `catalyst init slate` / `catalyst slate:create` [DOC]) with
+     Chart.js (annotation plugin for threshold lines and shaded window), or plain HTML + JS +
+     Chart.js if your team prefers. Use what the team already knows. Keep the bundle small.
+ 8.6 Time handling: show "16 Jun 18:00". Read hour from the string. Never use new Date(string).
+ 8.7 Three-minute demo script
+     1) open the public URL on a phone and a laptop.
+     2) Heat wave preset -> Run -> point at badges, threshold lines, grouped alert, battery empty.
+     3) Winter preset -> Run -> Main Grid hours, no alert, battery refills.
+     4) Upload a messy CSV (missing values, a 999 C reading) -> show the cleaning report.
+     5) Show logs: QuickML source badge, latency, cache hits.
+     6) Terminal: python predict.py --input sample_test_input.csv --output predictions.csv, then
+        python test_eval.py -> SUCCESS, and show the line "source=quickml".
+     7) Show README architecture picture.
+
+
+==========================================================================================
+ 9. DATA INGESTION AND CLEANUP RULES
+==========================================================================================
+ Same rules in the UI upload, the API and predict.py (they all call features.clean_inputs).
+ Check / action / message:
+   Missing column            -> reject (400)  "Missing columns: [...]. Expected: timestamp, ambient_temp_c, ..."
+   Header spelling/case      -> trim spaces, ignore case. Nothing else guessed.
+   Timestamp format          -> accept 'YYYY-MM-DD HH:MM:SS' and ISO with 'T'. Anything else: reject with
+                                an example. (Day-first dates are too risky to guess.)
+   Unparsable timestamp      -> keep the row, mark it, treat hour as unknown (base level), warn.
+   Not numeric (e.g. 'abc')  -> becomes missing.
+   Missing numeric           -> interpolate in time order (up to 3 hours), then use safe constants
+                                (temp 18.5, humidity 70, solar 0). Count it in the report.
+   Out of range              -> temp [-30, 45] C, humidity [0, 100], solar [0, 1400] -> clip + warn.
+                                (Train max is 38.3 C; above 45 C is a suspect sensor.)
+   Duplicate timestamps      -> in the UI keep the last. In predict.py NEVER drop rows (1 output per
+                                input row is a hard rule).
+   Gaps / not hourly         -> warn only. Features are row-wise, so prediction still works.
+   More than 24 rows         -> UI asks which 24-hour window to chart. API accepts up to 1000.
+   Fewer than 24 rows        -> allowed, with a warning.
+   File safety               -> max 1 MB and 1000 rows, only .csv, generated UUID object name in Stratus,
+                                no user path in storage keys, parameterised / whitelisted database
+                                queries, CORS allow-list, secrets only on the server.
+ Return a "quality" object (rows, filled, clipped, bad_timestamp, warnings). Show it in the UI and
+ write it to the logs. This is the visible proof of "clean and validate" in the PDF.
+
+
+==========================================================================================
+ 10. predict.py, test_eval.py, README
+==========================================================================================
+ 10.1 The contract (from the PDF and the starter test_eval.py)
+      - File predict.py in the repo root, function predict(input_df) -> numpy array (or list),
+        same length and same order as input rows, no NaN, no infinity.
+      - Command line: python predict.py --input sample_test_input.csv --output predictions.csv
+        Output file: header "timestamp,target_demand_kw", one row per input row, original timestamps.
+      - test_eval.py must print SUCCESS. (It runs from the folder that holds predict.py and
+        sample_test_input.csv.)
+
+ 10.2 What the Appendix A predict.py does [TESTED against a mock QuickML server, 6 scenarios]
+      - cleans input (never drops a row), builds the 6 features with the shared features.py
+      - sends rows in chunks (100 rows, 4 parallel workers), 30 s timeout, 3 retries with back-off
+      - payload modes: data_list {"data":[rows]} (default, same as starter), list [rows], single
+        (1 row per call, parallel)  -> switch with QUICKML_PAYLOAD_MODE
+      - tolerant parser: {"predictions":[..]}, {"result":[..]}, list of numbers, list of dicts
+      - auth modes: none (proxy or open endpoint) or oauth (4 headers, token cached 55 minutes)
+      - if a chunk fails: local backup model for those rows + loud warning + LAST_RUN["source"]
+        = quickml | mixed | fallback.  QUICKML_STRICT=1 turns the backup OFF (it raises instead)
+      - results I saw: all 3 payload modes give identical numbers; dead endpoint + strict -> error;
+        dead endpoint + not strict -> fallback flagged; shuffled rows keep the right alignment;
+        a row with NaN / text / 999 C / bad timestamp still gives a finite number; 1000 rows OK.
+      - RMSE of the whole path on the train rows: 8.515.
+
+ 10.3 Finish it after your endpoint exists
+      1) Put your proxy URL (or endpoint URL) as the default of QUICKML_ENDPOINT_URL.
+      2) Look at the endpoint's sample request/response and set QUICKML_PAYLOAD_MODE to match.
+      3) Run:  QUICKML_STRICT=1 python predict.py --input sample_test_input.csv --output predictions.csv
+         It must finish and print  source=quickml  failed_chunks=0.
+      4) Run python test_eval.py -> SUCCESS. (Remember: SUCCESS alone proves nothing, see T1.)
+      5) Compare predictions.csv with your local linear model. Max difference should be about 1.5 kW
+         or less, because it is the same model.
+
+ 10.4 Pre-submission checks for predict.py
+      [ ] STRICT run works and says source=quickml
+      [ ] Works from a clean folder that has only the files from the repo
+      [ ] Works on another laptop and another network, using only README steps
+      [ ] Fresh virtual env with Python 3.9 .. 3.12 and only: numpy pandas requests
+      [ ] 1000 rows finish in under 60 seconds (also after a cold start)
+      [ ] No secret anywhere in predict.py, in Git history, or in the zip
+      [ ] File keeps the name predict.py and the function name predict(input_df)
+
+ 10.5 README outline (judges read this first)
+      1. One-paragraph summary + live URL + 3 screenshots
+      2. Architecture picture and a table: Catalyst service -> what it does
+      3. Model: features, why linear, local validation table (section 4.5), QuickML RMSE, SHAP picture
+      4. predict.py: how to run, env vars (NAMES ONLY), payload modes, "source" line, fallback policy
+      5. Controller rules + the decision table + how it is tested
+      6. Battery assumptions (all numbers) and the "SoC never changes the mode" rule
+      7. Data cleaning rules and the quality report
+      8. API list with example JSON
+      9. Run locally, deploy to Catalyst (commands), .env.example
+     10. Honest limits: free-tier quota, cache, fallback, assumptions, what you would do next
+     11. Team and credits
+
+
+==========================================================================================
+ 11. DEPLOYMENT STEPS AND GO-LIVE CHECKLIST
+==========================================================================================
+ 11.1 Setup (everyone in the team, first hour)
+      - Register a free Catalyst account in your data centre (the PDF links an onboarding guide:
+        "Catalyst for HackSphere 3.0" - I could not open it from here, so read it yourself).
+      - Install Node.js, then the Catalyst CLI (npm package zcatalyst-cli), then catalyst login.
+      - Make a project: catalyst init  (choose AppSail and Slate).
+      - IMPORTANT: deploy a "hello world" to AppSail and to Slate in the FIRST hour. Deployment
+        surprises are the biggest time eater in hackathons. Fix them before you write real code.
+ 11.2 AppSail (backend) [DOC unless marked]
+      - catalyst appsail:add  (or choose it during init) -> Catalyst-managed runtime -> Python.
+      - app-config.json: "command" (start command), "env_variables", "memory" (256-512 MB is enough).
+      - Start command must listen on the port from env var X_ZOHO_CATALYST_LISTEN_PORT.
+          FastAPI: sh -c "uvicorn main:app --host 0.0.0.0 --port $X_ZOHO_CATALYST_LISTEN_PORT"
+          Flask  : python main.py   (read the port from the env var in the code)
+        (these start commands come from a third-party GitHub note, see section 16.4; verify)
+      - Deploy: catalyst deploy   or   catalyst deploy appsail
+      - How Python packages get installed (requirements.txt)? [TO-CHECK]. If it is not automatic,
+        either vendor the packages into the deploy folder or deploy a Docker image: AppSail also
+        accepts OCI container images (catalyst deploy appsail --name .. --source <image>) [DOC].
+      - Write temp files to /tmp only [DOC].
+ 11.3 Slate (frontend) [DOC]
+      - catalyst init slate  or  catalyst slate:create --name dashboard --framework react
+      - Put the AppSail URL in an env variable of the build (for example VITE_API_BASE).
+      - catalyst deploy slate --production      (or connect GitHub for auto deploy)
+      - Add the Slate URL to CORS_ALLOW_ORIGIN in AppSail.
+ 11.4 Environments: test the PRODUCTION URLs, and make sure the QuickML "Environment" header
+      (Development / Production) matches the endpoint you published [DOC]. Env vars must be set in
+      Production too, not only in Development.
+ 11.5 Go-live checklist
+      [ ] both URLs open in an incognito window on phone data (no Catalyst login wall)
+      [ ] CORS works from the Slate origin (browser console has no red errors)
+      [ ] /api/health is ok and a QuickML call from the DEPLOYED backend works (not just your laptop)
+      [ ] heat wave preset runs end to end in under 3 seconds; winter preset too
+      [ ] messy CSV upload shows the cleaning report
+      [ ] history and logs survive a redeploy (stored in the database, not in memory)
+      [ ] cold start: wait 15 minutes, open the app, time the first result
+      [ ] wrong endpoint key -> UI shows "fallback / error" clearly, no crash
+      [ ] daily QuickML budget counter works
+      [ ] predict.py from a clean machine against the live proxy: source=quickml
+      [ ] secret scan of the repo: search for client_secret, refresh_token, "1000." - nothing found
+      [ ] usage / billing page checked
+ 11.6 After judging: revoke the OAuth refresh token, and delete unused projects so you are not
+      charged a project minimum [DOC pricing page]. Keep everything LIVE until results are out.
+
+
+==========================================================================================
+ 12. TIMELINE (HOURS ARE PERSON-HOURS; SET YOUR OWN DEADLINE)
+==========================================================================================
+ Phase 0  (0.5-1 h)  Setup + questions
+          Accounts, CLI, repo, send section 18 questions, hello-world deploy to AppSail + Slate.
+          DONE WHEN: everyone can log in; both hello-worlds are public.
+ Phase 1  (1.5-2 h)  Local model
+          features.py, make_train_features.py, local linear fit, validation table.
+          DONE WHEN: RMSE about 8.5 and coefficients match section 5.2.
+ Phase 2  (1.5-2.5 h) QuickML
+          Dataset, pipeline, endpoint, OAuth client, curl test, known-answer test (Appendix B).
+          DONE WHEN: endpoint returns the expected numbers; payload format written down.
+ Phase 3  (1 h)      predict.py
+          Fill in URL + payload mode, STRICT run, test_eval.
+          DONE WHEN: source=quickml and SUCCESS.
+ Phase 4  (3-4 h)    Backend
+          ingest/clean, QuickML client + token cache, controller, battery, /api/forecast,
+          /api/predict (proxy), database writes, cache, tests, deploy.
+          DONE WHEN: curl to the deployed /api/forecast returns a full 24-row result.
+ Phase 5  (3-4 h)    Frontend
+          inputs -> run -> badges -> charts -> banner -> table -> logs; presets; deploy.
+          DONE WHEN: a stranger can use it without help.
+ Phase 6  (1-2 h)    Integration + polish
+          error states, mobile layout, cold start, performance, edge-case CSVs.
+ Phase 7  (1 h)      README, architecture picture, screenshots, short screen recording, final checks.
+ Buffer   (2-3 h)    Always keep it. Something will break.
+ Total about 16-22 person-hours. With 3 people that is about one long day.
+ If you have only 24 hours in total: Phase 0-3 in the first 6 hours, a basic UI in the next 8,
+ then polish and docs.
+
+ Who does what (3-4 people)
+   A  ML + QuickML + predict.py + validation table
+   B  backend + controller + battery + tests
+   C  frontend + charts + presets
+   D  deploy + README + QA checklist (or B/C share it)
+ Working alone: do the phases in order, MVP first, never skip the early hello-world deploy.
+
+ Cut list if you run late (drop in this order)
+   live feed, probability + band, history drawer, what-if sliders, Signals/Job Scheduling,
+   extra presets.  NEVER drop: QuickML endpoint, predict.py, controller tests, cleaning report,
+   README, public URLs.
+
+
+==========================================================================================
+ 13. RISK LIST
+==========================================================================================
+ #    Risk                                        Chance   Hit     What to do
+ R1   Judges cannot log in to your QuickML          high    huge    Ask organizers; AppSail proxy (6.6);
+      endpoint when they run predict.py                              test from a clean machine.
+ R2   Free 500 calls used up                        high    big     Cache, daily budget, 24-row tests,
+                                                                     ask for credits, full run only once.
+ R3   Endpoint takes only 1 row per call            medium  medium  "single" payload mode with 8
+                                                                     workers + cache.
+ R4   Cold start / slow endpoint                    medium  medium  30 s timeout, retries, optional
+                                                                     keep-warm job.
+ R5   Silent fallback hides a failure               medium  huge    "source" flag + STRICT final run.
+ R6   Hot test period hurts a tree model            high    big     Use linear + hinge (this plan).
+ R7   Hidden test behaves differently than train    low     big     Cannot fix; keep model simple.
+ R8   AppSail Python 3.9 / package install trouble  medium  medium  Deploy hello-world early; pin
+                                                                     versions; Docker image fallback.
+ R9   CORS or login wall on public URLs             medium  big     Serve UI from AppSail (6.8);
+                                                                     incognito test.
+ R10  Secrets leak to GitHub                        medium  big     .gitignore, secret scan, revoke.
+ R11  Time-zone / date parsing bugs                 medium  medium  Parse strings, no new Date().
+ R12  ">" vs ">=" misread in the controller         low     medium  Boundary unit tests.
+ R13  Alert spam makes UI unreadable                high    small   Group into events.
+ R14  Billing surprise                              low     medium  Check usage page, delete project
+                                                                     after judging.
+ R15  Wrong data centre (.com vs .in)               medium  medium  Use ZOHO_ACCOUNTS_URL for YOUR DC.
+ R16  Judges upload strange files                   medium  small   Strict validation, clear messages.
+ R17  AppSail idle running cost unclear             low     small   [TO-CHECK] usage page; small memory.
+ R18  Time runs out                                 high    big     MVP first, cut list (section 12).
+
+
+==========================================================================================
+ 14. SUBMISSION CHECKLIST (PDF section 9)
+==========================================================================================
+ [ ] Public Catalyst App URL (Slate / AppSail) - opens in incognito, works end to end
+ [ ] Code: public GitHub repo URL  OR  TeamName_Submission.zip
+        zip must NOT contain: node_modules, .env, venv, __pycache__, secrets
+ [ ] Full application code (frontend + backend)
+ [ ] Working predict.py configured with your published endpoint URL (or proxy URL)
+ [ ] test_eval.py prints SUCCESS and predict.py STRICT run prints source=quickml
+ [ ] README.md: setup steps, architecture, required environment variable NAMES, security notes
+ [ ] .env.example with fake values
+ [ ] model report (validation table, QuickML metrics screenshot, SHAP screenshot)
+ [ ] 3 screenshots + short screen recording (optional but strong)
+ [ ] Everything stays online until the results are announced
+
+
+==========================================================================================
+ 15. STRETCH IDEAS, AND THINGS NOT WORTH DOING
+==========================================================================================
+ 15.1 Stretch ideas (best value first; each is optional)
+      1) Overload probability and 95% band per hour (section 4.7). No extra QuickML call.
+      2) "Why this number?" breakdown. A linear model is exactly explainable:
+            243 kW = 143.8 base + 0 (midday) + 8.59 x 11.7 cooling degrees.
+         Show it as small bars per hour. Cheap, and judges love explanations.
+      3) What-if sliders (+3 C heat, +10% demand) computed in the browser with the local
+         coefficients. Zero calls.
+      4) Live weather auto-fill from the free Open-Meteo hourly forecast (temperature_2m,
+         relative_humidity_2m, shortwave_radiation) [TO-CHECK parameter names and that AppSail
+         can call it]. Say clearly: the model was trained on the hackathon's synthetic data, so
+         the kW are for demo only.
+      5) Job Scheduling: hourly auto-forecast that writes to the database (history fills itself).
+      6) Signals: send an email / webhook when a new critical overload event appears.
+      7) Dispatch comparison: rule-based (official) vs a simple peak-shaving plan, shown beside it.
+         Keep the official rule as the main answer.
+ 15.2 Things NOT worth doing here
+      - LSTM / GRU / TFT / N-BEATS / PatchTST: your test input has NO past demand values, so
+        models that read demand history cannot run at inference. The data is "hour block +
+        cooling hinge + noise", nothing for a deep net to learn. 4000 rows is small.
+      - Foundation models (Chronos, TimesFM, Moirai, Time-MoE): they forecast from past values of
+        the same series [PAPER]. Same problem. Not applicable.
+      - Lag / rolling weather features: classic in real load forecasting [PAPER], but in your data
+        they have correlation about 0.00 with the leftover error [DATA]. They only add risk if test
+        rows are shuffled.
+      - Tuning trees, stacking, AutoML chasing: the ceiling is 8.5. A tuned tree still loses in heat.
+      - Battery reinforcement learning (pymgrid style): far too heavy, and the official mode comes
+        from fixed rules anyway.
+      - Smoothing the official mode: it breaks the PDF rule.
+      Where these WOULD matter: real utility data, where "recency" temperature features gave 18-21%
+      gains over the vanilla benchmark [PAPER]. Mention this in README under "future work".
+
+
+==========================================================================================
+ 16. RESEARCH NOTES (PAPERS + GITHUB), WRITTEN IN MY OWN WORDS
+==========================================================================================
+ 16.1 Load forecasting methods
+  - MDPI Energies 2025, vol 18 issue 19, article 5060 (Greek power system, hourly data 2015-2024
+    with temperature, humidity, holidays): LightGBM beat CNN, LSTM, GRU and CNN-LSTM on every
+    metric (RMSE 101.67 MW, MAPE 1.20%, R2 0.9942). Takeaway: start with simple strong models.
+  - Kazakhstan short-term load forecasting thesis (synthetic data): LightGBM and XGBoost beat
+    SARIMA, LSTM and GRU; hourly pattern strong, weekly and monthly pattern weak - the same shape
+    as your dataset.
+  - Building thermal load study (Applied Energy 2020, LBNL): XGBoost was best among shallow models;
+    LSTM only helped at 1 hour ahead, not 24 hours ahead. Takeaway: for day-ahead with weather
+    inputs, simple models are enough.
+  - "Tao's Vanilla Benchmark": a multiple linear regression with hour / weekday / month dummies
+    and temperature terms. It is the standard yardstick in GEFCom 2012, 2014 and 2017 (HOPS paper
+    arXiv 2501.10637 and others re-use it). Adding "recency" terms (lagged and averaged
+    temperature, Wang-Liu-Hong 2016) improved it by 18-21% at the top level. Your solution is
+    "vanilla + a cooling hinge". In your data recency terms add nothing [DATA].
+  - More context: arXiv 1603.01376 (lasso for GEFCom2014), arXiv 2405.17070 (GAM mid-term), arXiv
+    1901.05052 (how to choose a load-forecasting technique).
+ 16.2 Foundation models for load (2025-2026)
+  - Meyer et al., arXiv 2410.09487 (v3 Jan 2026, IEEE Access 2025): zero-shot Chronos, TimesFM,
+    Time-MoE, Sundial are about as good as transformers trained from scratch on household load.
+    The paper also warns about information leakage in evaluation (a good reminder to validate by time).
+  - Simeone, arXiv 2602.10848 (Feb 2026): ERCOT 2020-2024 zero-shot test. Chronos-2 gives well
+    calibrated intervals (about 95% coverage at a 90% target); Moirai-2 and Prophet were
+    over-confident (about 70%).
+  - arXiv 2604.22077 (Apr 2026): fine-tuning foundation models helps load, solar and wind; pure
+    zero-shot needs adaptation.
+  Takeaway: interesting research, but all need past demand values. You do not have them. Skip.
+ 16.3 Microgrid and battery simulation on GitHub
+  - pymgrid (Total-RD, LGPL-3.0, paper arXiv 2011.08004): Python microgrid simulator with battery,
+    PV, load and generator modules. Its development moved to ahalev/python-microgrid (v1.4.1 on
+    PyPI). Use it only to read how battery limits and efficiencies are modelled. It is too heavy
+    for AppSail and LGPL needs care. Section 7.2 uses a tiny own model instead.
+ 16.4 Catalyst on GitHub and AI helpers
+  - catalystbyzoho/agent-skills (Apache-2.0): skills for AppSail, Slate, QuickML, Data Store,
+    Stratus, NoSQL, Signals and pricing; install with: npx skills add catalystbyzoho/agent-skills.
+    A Zoho MCP link can even create tables for you. Use it with your coding assistant so SDK calls
+    come out right (I did not verify the Data Store / NoSQL SDK calls myself).
+  - Catalyst docs have an "AI Toolkit": Context for LLMs, Catalyst MCP server, plugin [DOC].
+  - mwitono/catalyst-deploy-python (third party): notes on port binding and start commands for
+    Flask / FastAPI / Django on AppSail. Verify against official docs.
+ 16.5 What the research means for you
+  - Simple + correct features beat complex models on this data.
+  - Validate by time (forward-chaining), not by random split.
+  - Always say which model produced the number (honesty + reproducibility).
+
+
+==========================================================================================
+ 17. SOURCE LINKS
+==========================================================================================
+ Catalyst / Zoho documentation
+  QuickML regression algorithms (switch language to English at the page bottom):
+    https://docs.catalyst.zoho.com/es/quickml/help/ml-algorithms/regression-algorithms/
+  QuickML pipeline endpoints (auth headers, Test the Model, SHAP): last updated 2026-08-17
+    https://docs.catalyst.zoho.com/en/quickml/help/pipeline-endpoints/
+  QuickML limitations:      https://docs.catalyst.zoho.com/en/quickml/help/quickml-limitations
+  QuickML custom code:      https://docs.catalyst.zoho.com/en/quickml/help/custom-code
+  QuickML feature engineering:
+    https://docs.catalyst.zoho.com/en/quickml/help/operations-in-quickml/feature-engineering/
+  QuickML AutoML:           https://docs.catalyst.zoho.com/en/quickml/help/learning-center/automl/
+  Execute endpoint, Python: https://docs.catalyst.zoho.com/en/sdk/python/v1/quickml/execute-quickml-endpoints
+  Run inference, Python:    https://docs.catalyst.zoho.com/en/sdk/python/v1/quickml/execute-custom-ml-endpoint/
+  Free tier:                https://catalyst.zoho.com/free-tier/
+  Pricing:                  https://catalyst.zoho.com/pricing.html
+  AppSail execution:        https://docs.catalyst.zoho.com/en/serverless/help/appsail/key-concepts/appsail-execution
+  AppSail managed runtimes: https://docs.catalyst.zoho.com/en/serverless/help/appsail/catalyst-managed-runtimes/key-concepts
+  AppSail deploy from CLI:  https://docs.catalyst.zoho.com/en/serverless/help/appsail/catalyst-managed-runtimes/deploy-from-cli
+  Slate deploy from CLI:    https://docs.catalyst.zoho.com/en/slate/help/deploy-from-cli
+  Initialize Slate:         https://docs.catalyst.zoho.com/en/cli/v1/initialize-resources/initialize-slate/
+  Stratus upload (Python):  https://docs.catalyst.zoho.com/en/sdk/python/v1/cloud-scale/stratus/upload-object
+  Deprecation notice (File Store, Event Listeners, Cron):
+    https://forums.catalyst.zoho.com/portal/en/community/topic/catalyst-serverless-hackathon-handbook
+  Zoho OAuth self client:
+    https://www.zoho.com/accounts/protocol/oauth/self-client/authorization-code-flow.html
+ GitHub
+  https://github.com/catalystbyzoho/agent-skills
+  https://github.com/mwitono/catalyst-deploy-python
+  https://github.com/Total-RD/pymgrid        https://github.com/ahalev/python-microgrid
+ Papers and articles
+  https://www.mdpi.com/1996-1073/18/19/5060
+  https://arxiv.org/abs/2410.09487      https://arxiv.org/abs/2602.10848
+  https://www.emergentmind.com/papers/2604.22077   (arXiv 2604.22077)
+  https://arxiv.org/pdf/2501.10637      https://arxiv.org/pdf/1603.01376
+  https://arxiv.org/pdf/2405.17070      https://arxiv.org/pdf/1901.05052
+  https://blog.drhongtao.com/2018/11/winning-methods-from-bfcom2018-qualifying-match.html
+  https://eta-publications.lbl.gov/publications/building-thermal-load-prediction
+  https://nur.nu.edu.kz/handle/123456789/8701
+
+
+==========================================================================================
+ 18. QUESTIONS TO ASK THE ORGANIZERS (SEND ON DAY 1, SAVE THE ANSWERS)
+==========================================================================================
+  1. When judges run predict.py, how will they authenticate to our QuickML endpoint? Will they
+     set environment variables? May predict.py call our own AppSail URL, which calls QuickML?
+  2. Does the QuickML endpoint accept many rows in one request? Is one batch counted as 1
+     prediction or N? Are there extra credits above the 500 free calls?
+  3. Is the hidden test set the same 1000 rows as sample_test_input.csv, or a different block?
+  4. Is it allowed that predict.py builds extra features (hour flags, cooling degrees) before
+     calling the endpoint? Or must the endpoint accept the raw columns?
+  5. Is a local backup model inside predict.py allowed if the endpoint fails (we will flag it)?
+     Or should predict.py fail?
+  6. Is there a required battery capacity / formula for state of charge? What should the app do
+     when the battery is empty?
+  7. Which Catalyst data centre and URL style should we use? Do judges need to log in to open
+     our Slate / AppSail URLs?
+  8. Deadline time zone. How long must the app stay live after submission? Team size rules. May
+     the GitHub repo stay private until submission?
+
+
+==========================================================================================
+ APPENDIX A. TESTED REFERENCE CODE
+==========================================================================================
+ Every file below was run by me (Python 3.12 here; syntax checked against the Python 3.9 grammar).
+ Tests done: mock QuickML server in 6 scenarios, dirty input, shuffled rows, the starter
+ test_eval.py, 11 controller boundary cases, 10,000 random controller cases, battery checks.
+ Copy each block into a file with the name in its FILE line. features.py is the ONE shared file.
+ Needs: numpy, pandas, requests (scikit-learn only for your own local model check).
+
+------------------------------------------------------------------------------------------
+ FILE: features.py
+------------------------------------------------------------------------------------------
+"""features.py - ONE feature definition shared by: training CSV prep, predict.py, AppSail backend.
+Row-wise only (no lag / rolling), so it is safe even if test rows are shuffled or non-contiguous."""
+import numpy as np
+import pandas as pd
+
+T_COOL = 24.0                      # hinge point found from data (best RMSE at 24.0 C)
+FEATURE_COLS = ["b_night", "b_ramp6", "b_morning", "b_evening", "b_h23", "cdd"]   # midday = reference level
+RAW_COLS = ["timestamp", "ambient_temp_c", "humidity_pct", "solar_irradiance_wm2"]
+
+
+def hour_from_timestamp(ts):
+    """Parse 'YYYY-MM-DD HH:MM:SS' (also ISO 'T'). Naive time, NO timezone shift."""
+    return pd.to_datetime(ts, errors="coerce").dt.hour
+
+
+def build_features(df):
+    h = hour_from_timestamp(df["timestamp"])
+    t = pd.to_numeric(df["ambient_temp_c"], errors="coerce")
+    out = pd.DataFrame(index=df.index)
+    out["b_night"] = ((h >= 0) & (h <= 5)).astype(float)
+    out["b_ramp6"] = (h == 6).astype(float)
+    out["b_morning"] = ((h >= 7) & (h <= 9)).astype(float)
+    out["b_evening"] = ((h >= 18) & (h <= 22)).astype(float)
+    out["b_h23"] = (h == 23).astype(float)
+    out["cdd"] = np.maximum(0.0, t - T_COOL)
+    return out[FEATURE_COLS]
+
+
+def clean_inputs(df):
+    """Validate + repair raw rows. Returns (clean_df, report). Never drops rows (1 prediction per input row)."""
+    rep = {"rows": int(len(df)), "bad_timestamp": 0, "filled": {}, "clipped": {}}
+    d = df.copy()
+    miss = [c for c in RAW_COLS if c not in d.columns]
+    if miss:
+        raise ValueError("missing columns: %s" % miss)
+    ts = pd.to_datetime(d["timestamp"], errors="coerce")
+    rep["bad_timestamp"] = int(ts.isna().sum())
+    limits = {"ambient_temp_c": (-30, 45), "humidity_pct": (0, 100), "solar_irradiance_wm2": (0, 1400)}
+    for c, (lo, hi) in limits.items():
+        d[c] = pd.to_numeric(d[c], errors="coerce")
+        n_missing = int(d[c].isna().sum())
+        if n_missing:
+            d[c] = d[c].interpolate(limit_direction="both")      # neighbours in time order
+            d[c] = d[c].fillna({"ambient_temp_c": 18.5, "humidity_pct": 70.0, "solar_irradiance_wm2": 0.0}[c])
+            rep["filled"][c] = n_missing
+        n_clip = int(((d[c] < lo) | (d[c] > hi)).sum())
+        if n_clip:
+            d[c] = d[c].clip(lo, hi)
+            rep["clipped"][c] = n_clip
+    return d, rep
+
+------------------------------------------------------------------------------------------
+ FILE: controller.py
+------------------------------------------------------------------------------------------
+"""controller.py - Section 6 rules. Mode comes ONLY from the spec rule (never from battery state)."""
+import pandas as pd
+
+RENEWABLE = "RENEWABLE_STORAGE"
+MAIN = "MAIN_GRID"
+DEMAND_LIMIT_KW = 160.0      # > 160  -> renewable
+OVERLOAD_KW = 200.0          # >= 200 -> critical overload
+PEAK_START_H, PEAK_END_H = 18, 22   # inclusive
+
+
+def decide(demand_kw, hour):
+    mode = RENEWABLE if (demand_kw > DEMAND_LIMIT_KW or PEAK_START_H <= hour <= PEAK_END_H) else MAIN
+    return {"mode": mode, "critical_overload": bool(demand_kw >= OVERLOAD_KW),
+            "reason": ("demand>160" if demand_kw > DEMAND_LIMIT_KW else "") +
+                      ("+" if demand_kw > DEMAND_LIMIT_KW and PEAK_START_H <= hour <= PEAK_END_H else "") +
+                      ("peak-window 18-22" if PEAK_START_H <= hour <= PEAK_END_H else "") or "demand<=160 & off-peak"}
+
+
+def evaluate(timestamps, demands):
+    hours = pd.to_datetime(pd.Series(list(timestamps))).dt.hour.tolist()
+    return [dict(timestamp=str(t), hour=h, demand_kw=float(d), **decide(float(d), h))
+            for t, h, d in zip(timestamps, hours, demands)]
+
+
+def overload_events(rows):
+    """Group consecutive overload hours into events (nicer banners than one alert per hour)."""
+    ev, cur = [], None
+    for r in rows:
+        if r["critical_overload"]:
+            if cur is None:
+                cur = {"start": r["timestamp"], "end": r["timestamp"], "hours": 1, "peak_kw": r["demand_kw"]}
+            else:
+                cur["end"] = r["timestamp"]; cur["hours"] += 1; cur["peak_kw"] = max(cur["peak_kw"], r["demand_kw"])
+        elif cur is not None:
+            ev.append(cur); cur = None
+    if cur is not None:
+        ev.append(cur)
+    return ev
+
+------------------------------------------------------------------------------------------
+ FILE: battery.py
+------------------------------------------------------------------------------------------
+"""battery.py - SIMULATED state of charge (spec gives no formula, so all numbers are editable assumptions).
+It never changes the official grid mode; it only reports SoC + advisory flags."""
+from dataclasses import dataclass
+
+
+@dataclass
+class BatteryParams:
+    capacity_kwh: float = 2000.0
+    soc_start: float = 0.70
+    soc_min: float = 0.10
+    soc_max: float = 0.95
+    p_discharge_max_kw: float = 300.0
+    p_charge_max_kw: float = 150.0
+    eff_charge: float = 0.95
+    eff_discharge: float = 0.95
+    pv_kwp: float = 150.0          # PV power = pv_kwp * irradiance / 1000
+    step_h: float = 1.0
+
+
+def simulate(rows, solar, p=BatteryParams()):
+    """rows: output of controller.evaluate ; solar: list of W/m2 per row. Returns rows + soc fields."""
+    e = p.soc_start * p.capacity_kwh
+    out = []
+    for r, g in zip(rows, solar):
+        pv = p.pv_kwp * max(0.0, g) / 1000.0
+        d = r["demand_kw"]
+        net = max(0.0, d - pv)              # load left after PV
+        surplus = max(0.0, pv - d)          # PV left after load
+        batt_to_load = grid_charge = pv_charge = 0.0
+        room_kw = max(0.0, (p.soc_max * p.capacity_kwh - e) / (p.eff_charge * p.step_h))
+        if r["mode"] == "RENEWABLE_STORAGE":
+            avail_kw = max(0.0, (e - p.soc_min * p.capacity_kwh) * p.eff_discharge / p.step_h)
+            batt_to_load = min(net, p.p_discharge_max_kw, avail_kw)
+            e -= batt_to_load * p.step_h / p.eff_discharge
+            pv_charge = min(surplus, p.p_charge_max_kw, room_kw)          # spare PV may still charge; grid may NOT
+        else:
+            pv_charge = min(surplus, p.p_charge_max_kw, room_kw)
+            grid_charge = max(0.0, min(p.p_charge_max_kw - pv_charge, room_kw - pv_charge))
+        e += (pv_charge + grid_charge) * p.step_h * p.eff_charge
+        shortfall = max(0.0, net - batt_to_load) if r["mode"] == "RENEWABLE_STORAGE" else 0.0
+        soc = e / p.capacity_kwh
+        out.append(dict(r, pv_kw=round(pv, 1), soc_pct=round(100 * soc, 1), battery_to_load_kw=round(batt_to_load, 1),
+                        grid_charge_kw=round(grid_charge, 1), pv_charge_kw=round(pv_charge, 1), shortfall_kw=round(shortfall, 1),
+                        low_soc_warning=bool(soc <= p.soc_min + 0.02)))
+    return out
+
+------------------------------------------------------------------------------------------
+ FILE: predict.py
+------------------------------------------------------------------------------------------
+"""predict.py - HackSphere 3.0 submission script (keeps the starter contract: predict(input_df) -> np.ndarray).
+
+Run:  python predict.py --input sample_test_input.csv --output predictions.csv
+Env vars (all optional except the endpoint URL; NEVER hard-code secrets in a public repo):
+  QUICKML_ENDPOINT_URL   published endpoint URL  (or your AppSail /api/predict proxy URL)
+  QUICKML_AUTH_MODE      none | oauth            (default none -> proxy or open endpoint)
+  QUICKML_ENDPOINT_KEY, CATALYST_ORG, QUICKML_ENV(Development|Production)      -> headers for oauth mode
+  ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN, ZOHO_ACCOUNTS_URL(default https://accounts.zoho.in)
+  QUICKML_PAYLOAD_MODE   data_list | list | single   (default data_list = {"data":[rows]} like the starter)
+  QUICKML_CHUNK (default 100), QUICKML_WORKERS (default 4), QUICKML_STRICT=1 -> no silent fallback
+"""
+import argparse
+import os
+import sys
+import time
+
+import numpy as np
+import pandas as pd
+import requests
+from concurrent.futures import ThreadPoolExecutor
+
+from features import FEATURE_COLS, build_features, clean_inputs
+
+QUICKML_ENDPOINT_URL = os.getenv("QUICKML_ENDPOINT_URL", "YOUR_PUBLISHED_QUICKML_ENDPOINT_URL_HERE")
+AUTH_MODE = os.getenv("QUICKML_AUTH_MODE", "none")
+PAYLOAD_MODE = os.getenv("QUICKML_PAYLOAD_MODE", "data_list")
+CHUNK = int(os.getenv("QUICKML_CHUNK", "100"))
+WORKERS = int(os.getenv("QUICKML_WORKERS", "4"))
+STRICT = os.getenv("QUICKML_STRICT", "0") == "1"
+TIMEOUT_S = 30
+RETRIES = 3
+
+# Local linear model = same structure as the QuickML pipeline (fit on train_telemetry.csv). Used ONLY if the endpoint fails.
+_FALLBACK_INTERCEPT = 143.82
+_FALLBACK_COEF = {"b_night": -53.91, "b_ramp6": -11.00, "b_morning": 29.90, "b_evening": 54.23, "b_h23": -33.86, "cdd": 8.59}
+
+LAST_RUN = {"source": None, "failed_chunks": 0}
+_token = {"value": None, "exp": 0.0}
+
+
+def _fallback(feats):
+    y = np.full(len(feats), _FALLBACK_INTERCEPT, dtype=float)
+    for c, w in _FALLBACK_COEF.items():
+        y += w * feats[c].values
+    return y
+
+
+def _access_token():
+    if _token["value"] and time.time() < _token["exp"]:
+        return _token["value"]
+    base = os.getenv("ZOHO_ACCOUNTS_URL", "https://accounts.zoho.in")
+    r = requests.post(base + "/oauth/v2/token", params={
+        "refresh_token": os.environ["ZOHO_REFRESH_TOKEN"], "client_id": os.environ["ZOHO_CLIENT_ID"],
+        "client_secret": os.environ["ZOHO_CLIENT_SECRET"], "grant_type": "refresh_token"}, timeout=TIMEOUT_S)
+    r.raise_for_status()
+    _token["value"] = r.json()["access_token"]
+    _token["exp"] = time.time() + 55 * 60            # tokens live 1 h; refresh early, do not refresh per call
+    return _token["value"]
+
+
+def _headers():
+    h = {"Content-Type": "application/json"}
+    if AUTH_MODE == "oauth":
+        h.update({"Authorization": "Zoho-oauthtoken " + _access_token(),
+                  "X-QUICKML-ENDPOINT-KEY": os.environ["QUICKML_ENDPOINT_KEY"],
+                  "CATALYST-ORG": os.environ["CATALYST_ORG"],
+                  "Environment": os.getenv("QUICKML_ENV", "Production")})
+    return h
+
+
+def _to_float(v):
+    if isinstance(v, dict):                           # e.g. {"target_demand_kw": 123.4}
+        v = next((x for x in v.values() if isinstance(x, (int, float, str))), None)
+    return float(v)
+
+
+def _extract(js, n):
+    """Tolerant parser: {"predictions":[..]} | {"result":[..]} | {"status":..,"result":x} | [..]  (VERIFY on your endpoint)."""
+    if isinstance(js, dict):
+        js = js.get("predictions", js.get("result", js.get("data")))
+    if not isinstance(js, (list, tuple)):
+        js = [js]
+    vals = [_to_float(v) for v in js]
+    if len(vals) != n:
+        raise ValueError("endpoint returned %d values for %d rows" % (len(vals), n))
+    return vals
+
+
+def _post(payload):
+    last = None
+    for k in range(RETRIES):
+        try:
+            r = requests.post(QUICKML_ENDPOINT_URL, json=payload, headers=_headers(), timeout=TIMEOUT_S)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:                         # network, 4xx/5xx, bad json
+            last = e
+            time.sleep(2 ** k)
+    raise last
+
+
+def _call_chunk(records):
+    if PAYLOAD_MODE == "single":
+        return [_extract(_post(rec), 1)[0] for rec in records]
+    payload = {"data": records} if PAYLOAD_MODE == "data_list" else records
+    return _extract(_post(payload), len(records))
+
+
+def predict(input_df):
+    """Returns np.ndarray of predicted demand (kW), one value per input row, same order."""
+    df, _ = clean_inputs(input_df.reset_index(drop=True))
+    feats = build_features(df)
+    n = len(feats)
+    if QUICKML_ENDPOINT_URL == "YOUR_PUBLISHED_QUICKML_ENDPOINT_URL_HERE":
+        if STRICT:
+            raise RuntimeError("QUICKML_ENDPOINT_URL not set")
+        print("WARNING: no endpoint configured -> LOCAL FALLBACK model (NOT QuickML).", file=sys.stderr)
+        LAST_RUN.update(source="fallback", failed_chunks=1)
+        return _fallback(feats)
+    records = feats[FEATURE_COLS].to_dict(orient="records")
+    chunks = [records[i:i + CHUNK] for i in range(0, n, CHUNK)]
+    out, failed = [None] * len(chunks), 0
+
+    def work(i):
+        return i, _call_chunk(chunks[i])
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        futs = [ex.submit(work, i) for i in range(len(chunks))]
+        for i, f in enumerate(futs):
+            try:
+                idx, vals = f.result()
+                out[idx] = np.array(vals, dtype=float)
+            except Exception as e:
+                if STRICT:
+                    raise
+                failed += 1
+                lo = i * CHUNK
+                print("WARNING: chunk %d failed (%s) -> LOCAL FALLBACK for rows %d-%d" % (i, e, lo, lo + len(chunks[i]) - 1), file=sys.stderr)
+                out[i] = _fallback(feats.iloc[lo:lo + len(chunks[i])])
+    LAST_RUN.update(source="quickml" if failed == 0 else ("fallback" if failed == len(chunks) else "mixed"), failed_chunks=failed)
+    res = np.concatenate(out).astype(float)
+    if not np.isfinite(res).all():
+        raise ValueError("non-finite predictions")
+    return res
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input", default="sample_test_input.csv")
+    ap.add_argument("--output", default="predictions.csv")
+    a = ap.parse_args()
+    src = pd.read_csv(a.input)
+    preds = predict(src)
+    pd.DataFrame({"timestamp": src["timestamp"], "target_demand_kw": np.round(preds, 2)}).to_csv(a.output, index=False)
+    print("Wrote %d predictions to %s | source=%s failed_chunks=%d" % (len(preds), a.output, LAST_RUN["source"], LAST_RUN["failed_chunks"]))
+
+------------------------------------------------------------------------------------------
+ FILE: make_train_features.py
+------------------------------------------------------------------------------------------
+"""Build the QuickML training file: 6 features + target. Uses the SAME features.py as predict.py and the backend."""
+import pandas as pd
+from features import build_features
+
+df = pd.read_csv("train_telemetry.csv")
+out = build_features(df)
+out["target_demand_kw"] = df["target_demand_kw"].values
+out.to_csv("train_features.csv", index=False)
+print("wrote train_features.csv", out.shape, "columns:", list(out.columns))
+
+------------------------------------------------------------------------------------------
+ FILE: test_controller.py
+------------------------------------------------------------------------------------------
+"""Run:  python -m pytest -q test_controller.py     (or just: python test_controller.py)"""
+import random
+import pandas as pd
+from controller import decide, evaluate, overload_events, RENEWABLE, MAIN
+from battery import simulate, BatteryParams
+
+BOUNDARY = [  # demand, hour, mode, overload
+    (160.00, 10, MAIN, False), (160.01, 10, RENEWABLE, False), (100, 17, MAIN, False), (100, 18, RENEWABLE, False),
+    (100, 22, RENEWABLE, False), (100, 23, MAIN, False), (150, 12, MAIN, False), (199.99, 3, RENEWABLE, False),
+    (200.0, 3, RENEWABLE, True), (250, 3, RENEWABLE, True), (205, 19, RENEWABLE, True)]
+
+
+def test_boundaries():
+    for d, h, mode, ov in BOUNDARY:
+        r = decide(d, h)
+        assert (r["mode"], r["critical_overload"]) == (mode, ov), (d, h, r)
+
+
+def test_random_matches_plain_formula():
+    rnd = random.Random(7)
+    for _ in range(10000):
+        d, h = rnd.uniform(0, 400), rnd.randint(0, 23)
+        r = decide(d, h)
+        assert r["mode"] == (RENEWABLE if (d > 160 or 18 <= h <= 22) else MAIN)
+        assert r["critical_overload"] == (d >= 200)
+
+
+def test_events_grouping():
+    ts = pd.date_range("2015-06-16 15:00", periods=6, freq="h").astype(str)
+    rows = evaluate(list(ts), [210, 220, 150, 205, 100, 230])
+    ev = overload_events(rows)
+    assert [(e["hours"], round(e["peak_kw"])) for e in ev] == [(2, 220), (1, 205), (1, 230)]
+
+
+def test_battery_invariants():
+    rnd = random.Random(3)
+    p = BatteryParams()
+    ts = pd.date_range("2015-06-16 00:00", periods=24 * 14, freq="h").astype(str)
+    dem = [rnd.uniform(60, 300) for _ in ts]
+    sol = [rnd.uniform(0, 490) if 6 <= int(t[11:13]) <= 18 else 0.0 for t in ts]
+    out = simulate(evaluate(list(ts), dem), sol, p)
+    prev = p.soc_start * 100
+    for r in out:
+        assert p.soc_min * 100 - 0.11 <= r["soc_pct"] <= p.soc_max * 100 + 0.11, r
+        if r["mode"] == MAIN:
+            assert r["battery_to_load_kw"] == 0.0 and r["shortfall_kw"] == 0.0
+        else:
+            assert r["grid_charge_kw"] == 0.0                      # grid never charges in Renewable mode
+        # energy balance (kWh): change = charge*eff - discharge/eff  (0.1 % rounding slack)
+        exp = (r["grid_charge_kw"] + r["pv_charge_kw"]) * p.eff_charge - r["battery_to_load_kw"] / p.eff_discharge
+        assert abs((r["soc_pct"] - prev) / 100 * p.capacity_kwh - exp) < 3.0, (r, prev)
+        prev = r["soc_pct"]
+
+
+if __name__ == "__main__":
+    for f in (test_boundaries, test_random_matches_plain_formula, test_events_grouping, test_battery_invariants):
+        f(); print("PASS", f.__name__)
+
+
+==========================================================================================
+ APPENDIX B. curl TEMPLATES + KNOWN-ANSWER TABLE
+==========================================================================================
+ B.1 Get an access token (India data centre shown; use YOUR data centre's accounts URL) [DOC]
+
+   curl -s -X POST "https://accounts.zoho.in/oauth/v2/token" \
+        -d "refresh_token=$ZOHO_REFRESH_TOKEN" -d "client_id=$ZOHO_CLIENT_ID" \
+        -d "client_secret=$ZOHO_CLIENT_SECRET" -d "grant_type=refresh_token"
+
+   The answer has access_token (valid 1 hour). A refresh token can mint only 10 access tokens
+   in 10 minutes, so save the token and reuse it. Scope when you made the client:
+   QuickML.deployment.READ
+
+ B.2 Call the endpoint (headers from the QuickML endpoint details page) [DOC]
+
+   curl -s -X POST "$QUICKML_ENDPOINT_URL" \
+        -H "Authorization: Zoho-oauthtoken $TOKEN" \
+        -H "X-QUICKML-ENDPOINT-KEY: $QUICKML_ENDPOINT_KEY" \
+        -H "CATALYST-ORG: $CATALYST_ORG" -H "Environment: Production" \
+        -H "Content-Type: application/json" \
+        -d '{"b_night":0,"b_ramp6":0,"b_morning":0,"b_evening":1,"b_h23":0,"cdd":11.4}'
+
+   Body shapes to try, in this order (the endpoint page shows the right one) [TO-CHECK]:
+     1) one record as plain JSON (above)                  -> answer like {"status":"success","result":[..]}
+     2) {"data":[ {record}, {record}, ... ]}               (many rows, starter style)
+     3) [ {record}, {record}, ... ]                        (plain list)
+   Write down which shape works, how many rows it takes at once, and the latency. Then set
+   QUICKML_PAYLOAD_MODE = single | data_list | list in predict.py and the backend.
+
+ B.3 Known-answer table (my local linear model; QuickML should match within about +/-1.5 kW)
+
+   case                                 b_night b_ramp6 b_morning b_evening b_h23   cdd   -> expected kW
+   night 00-05, cool day                1       0       0         0         0      0.0   ->   89.91
+   midday, cool day                     0       0       0         0         0      0.0   ->  143.82
+   midday, 34 C (cdd 10)                0       0       0         0         0      10.0  ->  229.72
+   morning peak 07-09, cool             0       0       1         0         0      0.0   ->  173.72
+   evening 18-22, 35.4 C (cdd 11.4)     0       0       0         1         0      11.4  ->  295.98
+   hour 23, 26.5 C (cdd 2.5)            0       0       0         0         1      2.5   ->  131.44
+   hour 06, cool                        0       1       0         0         0      0.0   ->  132.82
+   First 3 rows of sample_test_input.csv (raw columns) -> expected kW: 243.98, 234.44, 232.73
+
+ If your endpoint is far from these numbers, go to the debug list in section 5.7.
+
+==========================================================================================
+ END OF FILE
+==========================================================================================
