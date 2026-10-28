@@ -14,5 +14,8 @@ predictions.csv
 .idea/
 .vscode/
 ML.zip
+*.pdf
+docs/presentation*
+docs/slide_bg*
 
 ML/
