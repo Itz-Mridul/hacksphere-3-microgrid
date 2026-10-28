@@ -20,11 +20,11 @@ An end-to-end cloud-native microgrid energy management solution deployed on **Zo
 
 ---
 
-## 🖥️ Operational Control Room Dashboard
+## 🖥️ Operational Control Room Dashboard (Full View)
 
-![Microgrid Operations Dashboard](docs/dashboard_viewport.png)
+![Microgrid Operations Dashboard — Full View](docs/dashboard_full.png)
 
-*Full high-resolution 24-hour dispatch and telemetry logs screenshot available at [docs/dashboard.png](docs/dashboard.png).*
+*Full-length telemetry screenshot of the running Zoho Catalyst operational dashboard — featuring real-time QuickML 24-hour load forecasting, predictive overload alerts, cost & carbon savings impact metrics, and advisory battery state-of-charge tracking.*
 
 ---
 
