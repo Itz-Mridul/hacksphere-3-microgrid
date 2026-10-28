@@ -5,6 +5,7 @@
   var liveOffset = 0;
   var chartLoad = null;
   var chartSoc = null;
+  var chartCost = null;
   var presets = [];
 
   function hourFromTs(ts) {
@@ -96,7 +97,7 @@
 
   function chartColors(rows) {
     return rows.map(function (r) {
-      return r.critical_overload ? "#ef4444" : (r.mode === "MAIN_GRID" ? "#10b981" : "#00f2fe");
+      return r.critical_overload ? "#DC2626" : (r.mode === "MAIN_GRID" ? "#0F172A" : "#16A34A");
     });
   }
 
@@ -112,16 +113,16 @@
       data: {
         labels: labels,
         datasets: [
-          { label: "95% Upper CI", data: hi, borderColor: "rgba(0, 242, 254, 0.2)", backgroundColor: "rgba(0, 242, 254, 0.05)", pointRadius: 0, fill: "+1" },
-          { label: "95% Lower CI", data: lo, borderColor: "rgba(0, 242, 254, 0.2)", pointRadius: 0, fill: false },
+          { label: "95% Upper CI", data: hi, borderColor: "rgba(22, 163, 74, 0.25)", backgroundColor: "rgba(22, 163, 74, 0.05)", pointRadius: 0, fill: "+1" },
+          { label: "95% Lower CI", data: lo, borderColor: "rgba(22, 163, 74, 0.25)", pointRadius: 0, fill: false },
           {
             label: "Predicted Demand (kW)",
             data: y,
-            borderColor: "#00f2fe",
-            backgroundColor: "rgba(0, 242, 254, 0.15)",
+            borderColor: "#16A34A",
+            backgroundColor: "rgba(22, 163, 74, 0.12)",
             pointBackgroundColor: chartColors(rows),
-            pointBorderColor: "#080d1a",
-            pointBorderWidth: 1.5,
+            pointBorderColor: "#FFFFFF",
+            pointBorderWidth: 2,
             pointRadius: 5,
             tension: 0.2,
             fill: true
@@ -131,11 +132,11 @@
       options: {
         responsive: true,
         plugins: {
-          legend: { labels: { color: "#849495", font: { family: "'Space Grotesk', sans-serif" } } }
+          legend: { labels: { color: "#14532D", font: { family: "'Inter', sans-serif", weight: "600" } } }
         },
         scales: {
-          x: { ticks: { color: "#849495", font: { family: "'JetBrains Mono', monospace" } }, grid: { color: "rgba(255,255,255,0.06)" } },
-          y: { ticks: { color: "#849495", font: { family: "'JetBrains Mono', monospace" } }, grid: { color: "rgba(255,255,255,0.06)" } }
+          x: { ticks: { color: "#166534", font: { family: "'JetBrains Mono', monospace" } }, grid: { color: "rgba(209, 250, 229, 0.7)" } },
+          y: { ticks: { color: "#166534", font: { family: "'JetBrains Mono', monospace" } }, grid: { color: "rgba(209, 250, 229, 0.7)" } }
         }
       }
     });
@@ -154,10 +155,11 @@
             type: "line",
             label: "Battery SoC %",
             data: rows.map(function (r) { return r.soc_pct; }),
-            borderColor: "#f59e0b",
-            backgroundColor: "rgba(245, 158, 11, 0.1)",
+            borderColor: "#CA8A04",
+            backgroundColor: "rgba(250, 204, 21, 0.15)",
             borderWidth: 2.5,
-            pointBackgroundColor: "#f59e0b",
+            pointBackgroundColor: "#FACC15",
+            pointBorderColor: "#0F172A",
             pointRadius: 4,
             tension: 0.2,
             yAxisID: "y"
@@ -165,21 +167,21 @@
           {
             label: "Battery to Load (kW)",
             data: rows.map(function (r) { return r.battery_to_load_kw; }),
-            backgroundColor: "rgba(0, 242, 254, 0.35)",
-            borderColor: "#00f2fe",
-            borderWidth: 1,
-            borderRadius: 4,
+            backgroundColor: "rgba(22, 163, 74, 0.35)",
+            borderColor: "#16A34A",
+            borderWidth: 1.5,
+            borderRadius: 6,
             yAxisID: "y1"
           }
         ]
       },
       options: {
         responsive: true,
-        plugins: { legend: { labels: { color: "#849495", font: { family: "'Space Grotesk', sans-serif" } } } },
+        plugins: { legend: { labels: { color: "#14532D", font: { family: "'Inter', sans-serif", weight: "600" } } } },
         scales: {
-          x: { ticks: { color: "#849495", font: { family: "'JetBrains Mono', monospace" } }, grid: { color: "rgba(255,255,255,0.06)" } },
-          y: { min: 0, max: 100, ticks: { color: "#849495", font: { family: "'JetBrains Mono', monospace" } }, grid: { color: "rgba(255,255,255,0.06)" } },
-          y1: { position: "right", ticks: { color: "#849495", font: { family: "'JetBrains Mono', monospace" } }, grid: { display: false } }
+          x: { ticks: { color: "#166534", font: { family: "'JetBrains Mono', monospace" } }, grid: { color: "rgba(209, 250, 229, 0.7)" } },
+          y: { min: 0, max: 100, ticks: { color: "#166534", font: { family: "'JetBrains Mono', monospace" } }, grid: { color: "rgba(209, 250, 229, 0.7)" } },
+          y1: { position: "right", ticks: { color: "#166534", font: { family: "'JetBrains Mono', monospace" } }, grid: { display: false } }
         }
       }
     });
@@ -202,6 +204,139 @@
     });
   }
 
+  function renderAlerts(alerts, summary) {
+    var empty = document.getElementById("alerts-empty");
+    var container = document.getElementById("alerts-container");
+    var badge = document.getElementById("alerts-count-badge");
+    if (!container) return;
+
+    if (empty) empty.hidden = true;
+    container.hidden = false;
+    container.innerHTML = "";
+
+    var count = alerts ? alerts.length : 0;
+    if (badge) {
+      badge.hidden = false;
+      var hasCrit = alerts && alerts.some(function (a) { return a.severity === "critical"; });
+      badge.textContent = count === 0 ? "0 risks" : (count + (count === 1 ? " alert" : " alerts"));
+      badge.className = "badge-tag " + (count === 0 ? "badge-info" : (hasCrit ? "badge-critical" : "badge-warning"));
+    }
+
+    if (!alerts || alerts.length === 0) {
+      var okDiv = document.createElement("div");
+      okDiv.className = "alert-item info alert-clear";
+      okDiv.innerHTML =
+        '<div class="alert-item-header">' +
+          '<span class="alert-badge info">INFO</span>' +
+          '<span class="alert-time">Next 24 Hours</span>' +
+          '<span class="alert-val">Nominal Grid</span>' +
+        '</div>' +
+        '<div class="alert-msg">No risks detected in next 24 hours. Grid load remains within operational limits.</div>' +
+        '<div class="alert-action">' +
+          '<span class="material-symbols-outlined">verified</span>' +
+          '<span><strong>Suggested Action:</strong> Maintain current storage dispatch profile</span>' +
+        '</div>';
+      container.appendChild(okDiv);
+      return;
+    }
+
+    alerts.forEach(function (a) {
+      var item = document.createElement("div");
+      var sev = a.severity || "warning";
+      item.className = "alert-item " + sev;
+      var icon = sev === "critical" ? "bolt" : "lightbulb";
+
+      item.innerHTML =
+        '<div class="alert-item-header">' +
+          '<span class="alert-badge ' + sev + '">' + sev.toUpperCase() + '</span>' +
+          '<span class="alert-time">' + (a.time || "--") + '</span>' +
+          (a.predicted_val ? '<span class="alert-val">' + a.predicted_val + '</span>' : '') +
+        '</div>' +
+        '<div class="alert-msg">' + (a.message || "") + '</div>' +
+        '<div class="alert-action">' +
+          '<span class="material-symbols-outlined">' + icon + '</span>' +
+          '<span><strong>Suggested Action:</strong> ' + (a.action || "Shift loads") + '</span>' +
+        '</div>';
+      container.appendChild(item);
+    });
+  }
+
+  function drawCost(cc) {
+    var ctx = document.getElementById("chart-cost");
+    if (!ctx || !cc) return;
+    if (chartCost) chartCost.destroy();
+
+    chartCost = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: ["Baseline (Grid-only)", "Smart Dispatch"],
+        datasets: [{
+          label: "Electricity Cost (₹)",
+          data: [cc.baseline_cost_inr || 0, cc.smart_cost_inr || 0],
+          backgroundColor: ["#0F172A", "#16A34A"],
+          borderColor: ["#0F172A", "#15803D"],
+          borderWidth: 1.5,
+          borderRadius: 6,
+          barPercentage: 0.55
+        }]
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                var v = Number(ctx.raw || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                return "Cost: ₹ " + v;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: "#166534",
+              font: { family: "'JetBrains Mono', monospace" },
+              callback: function (val) { return "₹" + Number(val).toLocaleString("en-IN"); }
+            },
+            grid: { color: "rgba(209, 250, 229, 0.7)" }
+          },
+          y: {
+            ticks: {
+              color: "#0F172A",
+              font: { family: "'Inter', sans-serif", weight: "600" }
+            },
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  }
+
+  function renderCostCarbon(cc) {
+    var empty = document.getElementById("cost-empty");
+    var content = document.getElementById("cost-content");
+    if (!content || !cc) return;
+
+    if (empty) empty.hidden = true;
+    content.hidden = false;
+
+    var costSavedEl = document.getElementById("kpi-cost-saved");
+    var savingsPctEl = document.getElementById("kpi-savings-pct");
+    var co2AvoidedEl = document.getElementById("kpi-co2-avoided");
+    var renewShareEl = document.getElementById("kpi-renew-share");
+
+    if (costSavedEl) costSavedEl.textContent = "₹ " + Number(cc.savings_inr || 0).toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    if (savingsPctEl) savingsPctEl.textContent = (cc.savings_pct || 0) + "%";
+    if (co2AvoidedEl) co2AvoidedEl.textContent = Number(cc.co2_avoided_kg || 0).toFixed(1) + " kg";
+    if (renewShareEl) renewShareEl.textContent = (cc.renewable_share_pct || 0) + "%";
+
+    drawCost(cc);
+  }
+
   function renderLogs(data) {
     var lines = [];
     var q = data.quality || {};
@@ -209,6 +344,13 @@
     (q.warnings || []).forEach(function (w) { lines.push("WARN " + w); });
     var m = data.model || {};
     lines.push("MODEL source=" + m.source + " latency=" + m.latency_ms + "ms calls=" + m.quickml_calls + " cache_hits=" + m.cache_hits);
+    if (data.alert_summary) {
+      lines.push(data.alert_summary);
+    }
+    if (data.cost_carbon) {
+      var cc = data.cost_carbon;
+      lines.push("COST & CARBON: Baseline ₹" + cc.baseline_cost_inr.toFixed(0) + " -> Smart ₹" + cc.smart_cost_inr.toFixed(0) + " | Saved ₹" + cc.savings_inr.toFixed(0) + " (" + cc.savings_pct + "%) | Avoided " + cc.co2_avoided_kg.toFixed(1) + "kg CO2 | Renewable " + cc.renewable_share_pct + "%");
+    }
     (data.transitions || []).forEach(function (t) { lines.push(t.message); });
     document.getElementById("logs").textContent = lines.join("\n");
   }
@@ -217,6 +359,8 @@
     last = data;
     renderHeadline(data);
     renderBanner(data.events);
+    renderAlerts(data.alerts, data.alert_summary);
+    renderCostCarbon(data.cost_carbon);
     renderTimeline(data.rows);
     drawLoad(data.rows);
     drawSoc(data.rows);
@@ -293,7 +437,11 @@
         ul.innerHTML = "";
         (j.runs || []).forEach(function (run) {
           var li = document.createElement("li");
-          li.textContent = run.run_id + " · " + run.n_rows + " rows · peak " + run.peak_kw + " · " + run.model_source;
+          var extra = "";
+          if (run.savings_inr != null) {
+            extra = " · Saved ₹" + Math.round(run.savings_inr) + " (" + run.savings_pct + "%)";
+          }
+          li.textContent = run.run_id + " · " + run.n_rows + " rows · peak " + run.peak_kw + " kW" + extra + " · " + run.model_source;
           li.onclick = function () {
             fetch(API + "/api/history/" + run.run_id)
               .then(function (r) { return r.json(); })
@@ -367,15 +515,43 @@
 
   document.getElementById("btn-csv").onclick = function () {
     if (!last) return;
-    var header = ["timestamp","ambient_temp_c","demand_kw","mode","critical_overload","soc_pct","reason"];
+    var header = [
+      "timestamp",
+      "ambient_temp_c",
+      "demand_kw",
+      "mode",
+      "critical_overload",
+      "soc_pct",
+      "battery_to_load_kw",
+      "pv_kw",
+      "grid_energy_kw",
+      "baseline_cost_inr",
+      "smart_cost_inr",
+      "co2_avoided_kg",
+      "reason"
+    ];
     var lines = [header.join(",")];
     last.rows.forEach(function (r) {
-      lines.push([r.timestamp, r.ambient_temp_c, r.demand_kw, r.mode, r.critical_overload, r.soc_pct, r.reason].map(csvSafe).join(","));
+      lines.push([
+        r.timestamp,
+        r.ambient_temp_c,
+        r.demand_kw,
+        r.mode,
+        r.critical_overload ? "YES" : "NO",
+        r.soc_pct,
+        r.battery_to_load_kw != null ? r.battery_to_load_kw : 0,
+        r.pv_kw != null ? r.pv_kw : 0,
+        r.grid_energy_kw != null ? r.grid_energy_kw : 0,
+        r.baseline_cost_inr != null ? r.baseline_cost_inr : 0,
+        r.smart_cost_inr != null ? r.smart_cost_inr : 0,
+        r.co2_avoided_kg != null ? r.co2_avoided_kg : 0,
+        r.reason
+      ].map(csvSafe).join(","));
     });
     var blob = new Blob([lines.join("\n")], { type: "text/csv" });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "forecast.csv";
+    a.download = "forecast_dispatch_cost_carbon.csv";
     a.click();
   };
 

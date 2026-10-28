@@ -8,7 +8,7 @@
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
   
   <link rel="stylesheet" href="/styles.css" />
@@ -21,9 +21,9 @@
       <div class="pulse-beacon"></div>
       <div>
         <h1>
-          <span class="material-symbols-outlined" style="color:var(--cyan-primary); font-size:24px;">hub</span>
+          <span class="material-symbols-outlined brand-icon">hub</span>
           Microgrid Brain
-          <span style="font-size:0.75rem; font-family:var(--font-mono); color:var(--cyan-primary); border:1px solid var(--line-cyan); padding:2px 8px; border-radius:4px; margin-left:6px;">NODE-09 // ONLINE</span>
+          <span class="node-badge">NODE-09 // ONLINE</span>
         </h1>
         <p class="sub">HACKSPHERE 3.0 · SMART DEMAND FORECAST & POWER DISPATCH</p>
       </div>
@@ -79,7 +79,7 @@
         <p class="hint">Expected Schema: timestamp, ambient_temp_c, humidity_pct, solar_irradiance_wm2</p>
         
         <div class="battery-settings">
-          <span class="material-symbols-outlined" style="font-size:16px; color:var(--cyan-primary);">battery_charging_full</span>
+          <span class="material-symbols-outlined battery-icon">battery_charging_full</span>
           <span>BESS Cap (kWh):</span>
           <input id="cap" type="number" value="2000" />
           <span>Start SoC:</span>
@@ -97,13 +97,13 @@
         </h2>
         
         <div id="empty-state" class="empty">
-          <span class="material-symbols-outlined" style="font-size:36px; display:block; margin:0 auto 8px; color:var(--text-dim);">power</span>
+          <span class="material-symbols-outlined empty-icon">power</span>
           Select an operational scenario and trigger <strong>Run Forecast</strong>.
         </div>
         
         <div id="headline" hidden>
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <span style="font-family:var(--font-mono); color:var(--text-muted); font-size:0.85rem;">ACTIVE DISPATCH:</span>
+          <div class="active-dispatch-row">
+            <span class="active-dispatch-label">ACTIVE DISPATCH:</span>
             <span id="first-mode" class="state"></span>
           </div>
           
@@ -114,15 +114,15 @@
             </div>
             <div>
               <span class="k">Critical Overload</span>
-              <strong id="kpi-ov" style="color:var(--crimson-alert);">—</strong>
+              <strong id="kpi-ov" class="kpi-val-alert">—</strong>
             </div>
             <div>
               <span class="k">Lowest Battery SoC</span>
-              <strong id="kpi-soc" style="color:var(--amber-tertiary);">—</strong>
+              <strong id="kpi-soc" class="kpi-val-accent">—</strong>
             </div>
             <div>
               <span class="k">Mode Switches</span>
-              <strong id="kpi-sw" style="color:var(--emerald-sec);">—</strong>
+              <strong id="kpi-sw" class="kpi-val-primary">—</strong>
             </div>
           </div>
         </div>
@@ -132,16 +132,73 @@
     <!-- Grouped Alert Banner -->
     <div id="banner" class="banner" hidden role="alert" aria-live="polite"></div>
 
+    <!-- Analytics Grid: Predictive Alerts & Cost/Carbon -->
+    <section class="grid-2">
+      <!-- Feature 1: Predictive Alerts Panel -->
+      <article class="card" id="card-alerts">
+        <div class="card-header-row">
+          <h2>
+            <span class="material-symbols-outlined" style="font-size:18px;">warning_amber</span>
+            Predictive Alerts
+          </h2>
+          <span id="alerts-count-badge" class="badge-tag" hidden>0 risks</span>
+        </div>
+        <div id="alerts-empty" class="empty">
+          <span class="material-symbols-outlined empty-icon">notifications_paused</span>
+          Select an operational scenario and trigger <strong>Run Forecast</strong> to scan 24-hr risks.
+        </div>
+        <div id="alerts-container" class="alerts-container" hidden></div>
+      </article>
+
+      <!-- Feature 2: Cost & Carbon Panel -->
+      <article class="card" id="card-cost-carbon">
+        <div class="card-header-row">
+          <h2>
+            <span class="material-symbols-outlined" style="font-size:18px;">price_check</span>
+            Cost & Carbon Impact
+          </h2>
+          <span class="rate-badge">Tariff: ₹8.00/kWh · 0.82 kg CO₂/kWh</span>
+        </div>
+        <div id="cost-empty" class="empty">
+          <span class="material-symbols-outlined empty-icon">energy_savings_leaf</span>
+          Select an operational scenario and trigger <strong>Run Forecast</strong> to view cost & carbon comparison.
+        </div>
+        <div id="cost-content" class="cost-content" hidden>
+          <div class="kpis cost-kpi-grid">
+            <div>
+              <span class="k">Cost Saved</span>
+              <strong id="kpi-cost-saved" style="color:var(--primary);">—</strong>
+            </div>
+            <div>
+              <span class="k">Savings %</span>
+              <strong id="kpi-savings-pct" style="color:var(--primary);">—</strong>
+            </div>
+            <div>
+              <span class="k">CO₂ Avoided</span>
+              <strong id="kpi-co2-avoided" style="color:var(--secondary);">—</strong>
+            </div>
+            <div>
+              <span class="k">Renewable Share</span>
+              <strong id="kpi-renew-share" style="color:var(--accent-dark);">—</strong>
+            </div>
+          </div>
+          <div class="cost-chart-wrapper" style="margin-top:16px;">
+            <canvas id="chart-cost" height="85"></canvas>
+          </div>
+        </div>
+      </article>
+    </section>
+
     <!-- Chart: 24-Hour Demand Load Curve -->
     <section class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <div class="card-header-row">
         <h2>
           <span class="material-symbols-outlined" style="font-size:18px;">show_chart</span>
           24-Hour Predicted Load Curve (kW)
         </h2>
-        <div style="display:flex; gap:16px; font-family:var(--font-mono); font-size:0.75rem;">
-          <span style="color:var(--cyan-primary);">-- 160 kW Switching</span>
-          <span style="color:var(--crimson-alert);">-- 200 kW Overload</span>
+        <div class="chart-thresholds">
+          <span class="threshold-switch">-- 160 kW Switching</span>
+          <span class="threshold-overload">-- 200 kW Overload</span>
         </div>
       </div>
       <canvas id="chart-load" height="110"></canvas>
@@ -156,15 +213,15 @@
           24-Hour Power Source Timeline
         </h2>
         <div id="timeline" class="timeline"></div>
-        <div style="display:flex; gap:16px; margin-top:14px; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted);">
-          <span style="display:flex; align-items:center; gap:6px;">
-            <span style="width:12px; height:12px; background:var(--emerald-sec); border-radius:2px;"></span> Main Grid
+        <div class="timeline-legend">
+          <span class="legend-item">
+            <span class="legend-swatch swatch-grid"></span> Main Grid
           </span>
-          <span style="display:flex; align-items:center; gap:6px;">
-            <span style="width:12px; height:12px; background:var(--cyan-primary); border-radius:2px;"></span> Renewable Storage
+          <span class="legend-item">
+            <span class="legend-swatch swatch-renewable"></span> Renewable Storage
           </span>
-          <span style="display:flex; align-items:center; gap:6px;">
-            <span style="width:12px; height:12px; border:2px solid var(--crimson-alert); border-radius:2px;"></span> Overload (&ge;200 kW)
+          <span class="legend-item">
+            <span class="legend-swatch swatch-overload"></span> Overload (&ge;200 kW)
           </span>
         </div>
       </article>

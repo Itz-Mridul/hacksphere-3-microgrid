@@ -40,6 +40,13 @@ SIGMA = 8.52
 OVERLOAD_KW = 200.0
 DEMAND_LIMIT_KW = 160.0
 
+# ---------------------------------------------------------------------------
+# Tariff & Environmental Constants (Configurable)
+# ---------------------------------------------------------------------------
+GRID_TARIFF_INR_PER_KWH = 8.0
+EMISSION_FACTOR_KG_PER_KWH = 0.82
+
+
 
 # ---------------------------------------------------------------------------
 # Database & Store
@@ -114,10 +121,25 @@ class Store(object):
     def history(self, limit=20):
         with self.lock:
             rows = self.conn.execute(
-                "SELECT run_id, created_at, n_rows, model_source, peak_kw, overload_hours, renewable_hours FROM forecast_run ORDER BY created_at DESC LIMIT ?",
+                "SELECT run_id, created_at, n_rows, model_source, peak_kw, overload_hours, renewable_hours, payload_json FROM forecast_run ORDER BY created_at DESC LIMIT ?",
                 (int(limit),)
             ).fetchall()
-        return [dict(r) for r in rows]
+        runs = []
+        for r in rows:
+            d = dict(r)
+            pj = d.pop("payload_json", None)
+            if pj:
+                try:
+                    payload = json.loads(pj)
+                    cc = payload.get("cost_carbon")
+                    if cc:
+                        d["savings_inr"] = cc.get("savings_inr")
+                        d["savings_pct"] = cc.get("savings_pct")
+                        d["co2_avoided_kg"] = cc.get("co2_avoided_kg")
+                except Exception:
+                    pass
+            runs.append(d)
+        return runs
 
     def get_run(self, run_id):
         with self.lock:
@@ -265,6 +287,213 @@ def _explain(feats):
             parts.append({"name": labels[c], "kw": round(contrib, 2), "x": round(x, 3), "coef": w})
             total += contrib
     return {"parts": parts, "sum_kw": round(total, 2)}
+
+
+# ---------------------------------------------------------------------------
+# Predictive Alerts & Cost/Carbon Analytics
+# ---------------------------------------------------------------------------
+def _alert_time_str(rows):
+    h0 = rows[0].get("hour", 0)
+    h1 = rows[-1].get("hour", 0)
+    if len(rows) == 1 or h0 == h1:
+        return "%02d:00" % (h0 if h0 is not None else 0)
+    return "%02d:00 to %02d:00" % (h0 if h0 is not None else 0, h1 if h1 is not None else 0)
+
+
+def _format_overload_alert(rows):
+    peak = max(float(r.get("demand_kw", 0.0)) for r in rows)
+    h0 = rows[0].get("hour", 0)
+    pre_h = (h0 - 1) % 24 if h0 is not None else 0
+    t_str = _alert_time_str(rows)
+    action = "Pre-charge battery before %02d:00 and shift non-critical loads" % pre_h
+    if len(rows) == 1:
+        msg = "Overload expected at %s, peak %.1f kW" % (t_str, peak)
+    else:
+        msg = "Overload expected %s (%d hrs), peak %.1f kW" % (t_str, len(rows), peak)
+    return {
+        "severity": "critical",
+        "type": "overload",
+        "time": t_str,
+        "start_hour": h0 if h0 is not None else 0,
+        "end_hour": rows[-1].get("hour", 0),
+        "hours_count": len(rows),
+        "predicted_val": "Peak %.1f kW" % peak,
+        "value_num": round(peak, 1),
+        "message": msg,
+        "action": action
+    }
+
+
+def _format_switching_alert(rows):
+    peak = max(float(r.get("demand_kw", 0.0)) for r in rows)
+    h0 = rows[0].get("hour", 0)
+    t_str = _alert_time_str(rows)
+    action = "Prepare battery storage dispatch to minimize grid tariff spikes"
+    if len(rows) == 1:
+        msg = "High demand switching expected at %s, peak %.1f kW (>=160 kW)" % (t_str, peak)
+    else:
+        msg = "High demand switching expected %s (%d hrs), peak %.1f kW (>=160 kW)" % (t_str, len(rows), peak)
+    return {
+        "severity": "warning",
+        "type": "switching",
+        "time": t_str,
+        "start_hour": h0 if h0 is not None else 0,
+        "end_hour": rows[-1].get("hour", 0),
+        "hours_count": len(rows),
+        "predicted_val": "Peak %.1f kW" % peak,
+        "value_num": round(peak, 1),
+        "message": msg,
+        "action": action
+    }
+
+
+def _format_low_soc_alert(rows):
+    min_soc = min(float(r.get("soc_pct", 100.0)) for r in rows)
+    h0 = rows[0].get("hour", 0)
+    t_str = _alert_time_str(rows)
+    action = "Initiate off-peak grid charging or throttle discretionary load"
+    if len(rows) == 1:
+        msg = "Low battery reserve at %s: SoC drops to %.1f%% (<20%%)" % (t_str, min_soc)
+    else:
+        msg = "Low battery reserve window %s (%d hrs): minimum SoC %.1f%% (<20%%)" % (t_str, len(rows), min_soc)
+    return {
+        "severity": "warning",
+        "type": "low_battery",
+        "time": t_str,
+        "start_hour": h0 if h0 is not None else 0,
+        "end_hour": rows[-1].get("hour", 0),
+        "hours_count": len(rows),
+        "predicted_val": "SoC %.1f%%" % min_soc,
+        "value_num": round(min_soc, 1),
+        "message": msg,
+        "action": action
+    }
+
+
+def compute_predictive_alerts(sim_rows):
+    """Scan 24h simulation rows and detect overload, switching, and low battery risks."""
+    alerts = []
+    if not sim_rows:
+        return alerts
+
+    # 1. Overload hours: demand >= 200 kW (critical)
+    # Group consecutive overload hours into one alert window (e.g. "18:00 to 20:00")
+    cur_ov = []
+    for r in sim_rows:
+        if r.get("critical_overload") or float(r.get("demand_kw", 0.0)) >= OVERLOAD_KW:
+            cur_ov.append(r)
+        else:
+            if cur_ov:
+                alerts.append(_format_overload_alert(cur_ov))
+                cur_ov = []
+    if cur_ov:
+        alerts.append(_format_overload_alert(cur_ov))
+
+    # 2. Switching hours: demand >= 160 kW and < 200 kW (warning)
+    cur_sw = []
+    for r in sim_rows:
+        d = float(r.get("demand_kw", 0.0))
+        if DEMAND_LIMIT_KW <= d < OVERLOAD_KW:
+            cur_sw.append(r)
+        else:
+            if cur_sw:
+                alerts.append(_format_switching_alert(cur_sw))
+                cur_sw = []
+    if cur_sw:
+        alerts.append(_format_switching_alert(cur_sw))
+
+    # 3. Low battery: SoC below 20% (warning)
+    cur_soc = []
+    for r in sim_rows:
+        if float(r.get("soc_pct", 100.0)) < 20.0:
+            cur_soc.append(r)
+        else:
+            if cur_soc:
+                alerts.append(_format_low_soc_alert(cur_soc))
+                cur_soc = []
+    if cur_soc:
+        alerts.append(_format_low_soc_alert(cur_soc))
+
+    alerts.sort(key=lambda a: a.get("start_hour", 0))
+    return alerts
+
+
+def format_alert_summary(alerts):
+    if not alerts:
+        return "ALERTS: 0 risks detected in next 24 hours (Normal Dispatch)"
+    n_crit = sum(1 for a in alerts if a["severity"] == "critical")
+    n_warn = sum(1 for a in alerts if a["severity"] == "warning")
+    parts = []
+    for a in alerts:
+        parts.append("%s %s" % (a["time"], a["type"].replace("_", " ").title()))
+    return "ALERTS: %d critical, %d warning [%s]" % (n_crit, n_warn, "; ".join(parts[:3]))
+
+
+def compute_cost_carbon(sim_rows):
+    """Compute baseline vs smart dispatch cost, savings, renewable share, and CO2 abatement."""
+    if not sim_rows:
+        return {
+            "grid_tariff_inr": GRID_TARIFF_INR_PER_KWH,
+            "emission_factor": EMISSION_FACTOR_KG_PER_KWH,
+            "baseline_cost_inr": 0.0,
+            "smart_cost_inr": 0.0,
+            "savings_inr": 0.0,
+            "savings_pct": 0.0,
+            "grid_kwh": 0.0,
+            "renewable_kwh": 0.0,
+            "storage_kwh": 0.0,
+            "total_demand_kwh": 0.0,
+            "renewable_share_pct": 0.0,
+            "co2_avoided_kg": 0.0
+        }
+
+    total_demand_kwh = sum(float(r.get("demand_kw", 0.0)) for r in sim_rows)
+    baseline_cost = total_demand_kwh * GRID_TARIFF_INR_PER_KWH
+
+    grid_energy_kwh = 0.0
+    storage_kwh = 0.0
+    renewable_kwh = 0.0
+
+    for r in sim_rows:
+        d = float(r.get("demand_kw", 0.0))
+        pv = float(r.get("pv_kw", 0.0))
+        batt_to_load = float(r.get("battery_to_load_kw", 0.0))
+        grid_charge = float(r.get("grid_charge_kw", 0.0))
+        shortfall = float(r.get("shortfall_kw", 0.0))
+        mode = r.get("mode", "MAIN_GRID")
+
+        grid_for_load = shortfall if mode == "RENEWABLE_STORAGE" else max(0.0, d - pv)
+        grid_energy_kwh += (grid_for_load + grid_charge)
+        storage_kwh += batt_to_load
+        renewable_kwh += pv
+
+    smart_cost = grid_energy_kwh * GRID_TARIFF_INR_PER_KWH
+    savings_inr = max(0.0, baseline_cost - smart_cost)
+    savings_pct = (savings_inr / baseline_cost * 100.0) if baseline_cost > 0 else 0.0
+
+    # CO2 avoided (kg) = (renewable + battery discharge kWh) x 0.82 kg/kWh
+    clean_kwh = renewable_kwh + storage_kwh
+    co2_avoided = clean_kwh * EMISSION_FACTOR_KG_PER_KWH
+
+    total_energy = grid_energy_kwh + clean_kwh
+    renewable_share = (clean_kwh / total_energy * 100.0) if total_energy > 0 else 0.0
+    renewable_share = min(100.0, renewable_share)
+
+    return {
+        "grid_tariff_inr": GRID_TARIFF_INR_PER_KWH,
+        "emission_factor": EMISSION_FACTOR_KG_PER_KWH,
+        "baseline_cost_inr": round(baseline_cost, 2),
+        "smart_cost_inr": round(smart_cost, 2),
+        "savings_inr": round(savings_inr, 2),
+        "savings_pct": round(savings_pct, 1),
+        "grid_kwh": round(grid_energy_kwh, 1),
+        "renewable_kwh": round(renewable_kwh, 1),
+        "storage_kwh": round(storage_kwh, 1),
+        "total_demand_kwh": round(total_demand_kwh, 1),
+        "renewable_share_pct": round(renewable_share, 1),
+        "co2_avoided_kg": round(co2_avoided, 2)
+    }
+
 
 
 # ---------------------------------------------------------------------------
@@ -504,6 +733,13 @@ class MicrogridHandler(BaseHTTPRequestHandler):
                 for i, r in enumerate(sim_rows):
                     lo = round(float(r["demand_kw"]) - 1.96 * SIGMA, 1)
                     hi = round(float(r["demand_kw"]) + 1.96 * SIGMA, 1)
+                    d = float(r["demand_kw"])
+                    pv = float(r.get("pv_kw", 0.0))
+                    batt_to_load = float(r.get("battery_to_load_kw", 0.0))
+                    grid_charge = float(r.get("grid_charge_kw", 0.0))
+                    shortfall = float(r.get("shortfall_kw", 0.0))
+                    mode = r.get("mode", "MAIN_GRID")
+                    grid_energy_hour = (shortfall if mode == "RENEWABLE_STORAGE" else max(0.0, d - pv)) + grid_charge
                     rec = dict(r)
                     rec.update({
                         "p95_low": lo,
@@ -512,6 +748,10 @@ class MicrogridHandler(BaseHTTPRequestHandler):
                         "ambient_temp_c": float(rows[i].get("ambient_temp_c", 18.5)),
                         "humidity_pct": float(rows[i].get("humidity_pct", 70.0)),
                         "solar_irradiance_wm2": float(rows[i].get("solar_irradiance_wm2", 0.0)),
+                        "grid_energy_kw": round(grid_energy_hour, 1),
+                        "baseline_cost_inr": round(d * GRID_TARIFF_INR_PER_KWH, 2),
+                        "smart_cost_inr": round(grid_energy_hour * GRID_TARIFF_INR_PER_KWH, 2),
+                        "co2_avoided_kg": round((pv + batt_to_load) * EMISSION_FACTOR_KG_PER_KWH, 2),
                         "explain": _explain(feature_list[i])
                     })
                     out_rows.append(rec)
@@ -522,6 +762,10 @@ class MicrogridHandler(BaseHTTPRequestHandler):
                 min_soc = min(socs) if socs else None
                 min_soc_at = next((r["timestamp"] for r in out_rows if r["soc_pct"] == min_soc), None) if out_rows else None
 
+                alerts = compute_predictive_alerts(out_rows)
+                alert_summary = format_alert_summary(alerts)
+                cost_carbon = compute_cost_carbon(out_rows)
+
                 kpis = {
                     "peak_kw": peak_kw,
                     "peak_at": peak_at,
@@ -531,7 +775,11 @@ class MicrogridHandler(BaseHTTPRequestHandler):
                     "overload_events": len(events),
                     "mode_switches": sum(1 for t in trans if t["kind"] == "TRANSITION"),
                     "min_soc_pct": min_soc,
-                    "min_soc_at": min_soc_at
+                    "min_soc_at": min_soc_at,
+                    "savings_inr": cost_carbon["savings_inr"],
+                    "savings_pct": cost_carbon["savings_pct"],
+                    "co2_avoided_kg": cost_carbon["co2_avoided_kg"],
+                    "renewable_share_pct": cost_carbon["renewable_share_pct"]
                 }
                 latency = int((time.time() - t0) * 1000)
                 run_id = "r_%s_%s" % (time.strftime("%Y%m%d_%H%M%S"), os.urandom(2).hex())
@@ -549,7 +797,10 @@ class MicrogridHandler(BaseHTTPRequestHandler):
                     "rows": out_rows,
                     "transitions": trans,
                     "events": events,
-                    "kpis": kpis
+                    "kpis": kpis,
+                    "alerts": alerts,
+                    "alert_summary": alert_summary,
+                    "cost_carbon": cost_carbon
                 }
                 store.save_run(res)
                 self._json(200, res)
